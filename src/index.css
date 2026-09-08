@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --animate-flow: flow 1.6s linear infinite;
+  --animate-pulse-node: pulse-node 1.4s ease-in-out infinite;
+
+  @keyframes flow {
+    to {
+      stroke-dashoffset: -20;
+    }
+  }
+  @keyframes pulse-node {
+    0%, 100% { box-shadow: 0 0 0 0 var(--color-accent-ring); }
+    50% { box-shadow: 0 0 0 6px transparent; }
+  }
+}
+
+:root {
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.18 0.01 270);
+  --muted: oklch(0.96 0.002 270);
+  --muted-foreground: oklch(0.48 0.01 270);
+  --border: oklch(0.9 0.003 270);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 270);
+  --panel: oklch(0.97 0.002 270);
+  --accent: oklch(0.58 0.19 275);
+  --accent-foreground: oklch(0.99 0 0);
+  --accent-soft: oklch(0.93 0.03 275);
+  --ring: oklch(0.58 0.19 275);
+  --code-bg: oklch(0.97 0.003 270);
+  --success: oklch(0.6 0.15 150);
+  --warning: oklch(0.7 0.16 70);
+  --danger: oklch(0.6 0.2 25);
+  --node-bg: oklch(1 0 0);
+  --node-border: oklch(0.85 0.004 270);
+  --edge: oklch(0.7 0.01 270);
+}
+
+.dark {
+  --background: oklch(0.16 0.006 270);
+  --foreground: oklch(0.93 0.005 270);
+  --muted: oklch(0.21 0.006 270);
+  --muted-foreground: oklch(0.65 0.01 270);
+  --border: oklch(0.28 0.006 270);
+  --card: oklch(0.19 0.006 270);
+  --card-foreground: oklch(0.93 0.005 270);
+  --panel: oklch(0.135 0.006 270);
+  --accent: oklch(0.72 0.16 280);
+  --accent-foreground: oklch(0.12 0.01 280);
+  --accent-soft: oklch(0.28 0.07 280);
+  --ring: oklch(0.72 0.16 280);
+  --code-bg: oklch(0.14 0.006 270);
+  --success: oklch(0.68 0.15 150);
+  --warning: oklch(0.75 0.15 70);
+  --danger: oklch(0.68 0.18 25);
+  --node-bg: oklch(0.21 0.008 270);
+  --node-border: oklch(0.32 0.008 270);
+  --edge: oklch(0.4 0.01 270);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-panel: var(--panel);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ring: var(--ring);
+  --color-ring: var(--ring);
+  --color-code-bg: var(--code-bg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-node-bg: var(--node-bg);
+  --color-node-border: var(--node-border);
+  --color-edge: var(--edge);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  color-scheme: dark;
+}
+html:not(.dark) {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+code, pre, kbd, .font-mono-ui {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+/* scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 8px; }
+
+/* React Flow overrides for our theme */
+.react-flow__attribution { display: none; }
+.react-flow__controls {
+  box-shadow: none !important;
+}
+.react-flow__controls-button {
+  background: var(--color-card) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-foreground) !important;
+}
+.react-flow__controls-button:hover {
+  background: var(--color-muted) !important;
+}
+.react-flow__edge-path {
+  stroke: var(--color-edge);
+}
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--color-accent);
+}
+
+/* prism-like token colors (manual, minimal) */
+.tok-keyword { color: oklch(0.62 0.19 300); }
+.dark .tok-keyword { color: oklch(0.78 0.14 300); }
+.tok-string { color: oklch(0.55 0.14 150); }
+.dark .tok-string { color: oklch(0.75 0.13 150); }
+.tok-comment { color: var(--color-muted-foreground); font-style: italic; }
+.tok-function { color: oklch(0.55 0.18 250); }
+.dark .tok-function { color: oklch(0.78 0.13 240); }
+.tok-number { color: oklch(0.6 0.17 45); }
+.dark .tok-number { color: oklch(0.78 0.14 60); }
+.tok-punct { color: var(--color-muted-foreground); }
+.tok-property { color: oklch(0.55 0.15 25); }
+.dark .tok-property { color: oklch(0.78 0.1 30); }
