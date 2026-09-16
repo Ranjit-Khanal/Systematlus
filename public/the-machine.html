@@ -1,0 +1,3272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>THE MACHINE</title>
+<meta name="description" content="An operating system you can fly through — a deterministic simulation of a small computer, rendered in 3D." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%2305070c%22/><rect x=%2220%22 y=%2230%22 width=%2260%22 height=%2240%22 fill=%22none%22 stroke=%22%2300e5ff%22 stroke-width=%226%22/><line x1=%2220%22 y1=%2250%22 x2=%2280%22 y2=%2250%22 stroke=%22%23ffb000%22 stroke-width=%226%22/></svg>" />
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+:root {
+  --bg: #05070c;
+  --panel-bg: rgba(10, 14, 22, 0.88);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --text: #d7e2f0;
+  --text-dim: #7c8ba3;
+  --text-faint: #4a5568;
+  --accent-cyan: #29d3ff;
+  --accent-amber: #ffb000;
+  --accent-red: #ff4d4d;
+  --accent-green: #4dff9e;
+  --accent-violet: #b48dff;
+  --mono: "SF Mono", "Cascadia Code", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; overscroll-behavior: none; }
+body { font-family: var(--sans); color: var(--text); font-size: 13px; -webkit-font-smoothing: antialiased; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+
+#scene-container { position: fixed; inset: 0; }
+#scene-container canvas { display: block; touch-action: none; }
+#css2d-container { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+
+/* ---------- shared panel look ---------- */
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  pointer-events: auto;
+}
+.panel h3 {
+  margin: 0; padding: 8px 12px; font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-dim); border-bottom: 1px solid var(--panel-border); font-weight: 600;
+}
+button {
+  font-family: var(--sans); font-size: 12px; color: var(--text); background: rgba(255,255,255,0.04);
+  border: 1px solid var(--panel-border); border-radius: 6px; padding: 5px 9px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+button:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.18); }
+button:active { background: rgba(255,255,255,0.14); }
+button.active { background: rgba(41,211,255,0.16); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+button.icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: 14px; }
+select, input[type=range] { font-family: var(--mono); accent-color: var(--accent-cyan); }
+.mono { font-family: var(--mono); }
+.row { display: flex; align-items: center; gap: 6px; }
+.col { display: flex; flex-direction: column; gap: 6px; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- overlay layout ---------- */
+#ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: flex; flex-direction: column; }
+
+#topbar {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 14px; margin: 10px 10px 0 10px;
+  flex-wrap: wrap;
+}
+#title-block { display: flex; flex-direction: column; line-height: 1.15; margin-right: 6px; }
+#title-block .t1 { font-size: 14px; font-weight: 700; letter-spacing: 0.04em; color: #fff; }
+#title-block .t2 { font-size: 9.5px; color: var(--text-dim); letter-spacing: 0.02em; }
+
+.dilation-dial { display: flex; gap: 2px; padding: 3px; }
+.dilation-dial button { font-family: var(--mono); font-size: 10.5px; padding: 5px 8px; }
+
+#time-readout { font-family: var(--mono); font-size: 11px; color: var(--text-dim); padding: 4px 10px; white-space: nowrap; }
+#time-readout b { color: var(--accent-cyan); font-weight: 600; }
+
+#transport { display: flex; gap: 3px; padding: 3px; }
+
+#topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+#scenario-select { padding: 6px 9px; border-radius: 8px; background: rgba(255,255,255,0.04); color: var(--text); border: 1px solid var(--panel-border); }
+
+/* main middle row: side panels */
+#midrow { flex: 1; display: flex; justify-content: space-between; padding: 0 10px; min-height: 0; gap: 10px; }
+
+#left-stack { display: flex; flex-direction: column; gap: 10px; width: 210px; pointer-events: none; overflow: hidden auto; max-height: 100%; }
+#left-stack .panel { pointer-events: auto; }
+#right-stack { display: flex; flex-direction: column; gap: 10px; width: 300px; pointer-events: none; align-items: flex-end; overflow: hidden auto; max-height: 100%; }
+#right-stack .panel { pointer-events: auto; width: 100%; }
+
+.layer-toggle-list, .camera-mode-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.layer-toggle-list label, .camera-mode-list label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text); cursor: pointer; padding: 3px 4px; border-radius: 5px; }
+.layer-toggle-list label:hover, .camera-mode-list label:hover { background: rgba(255,255,255,0.05); }
+.layer-toggle-list input, .camera-mode-list input { accent-color: var(--accent-cyan); }
+.swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex: none; }
+
+#cutaway-box { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+#cutaway-box input[type=range] { width: 100%; }
+#cutaway-box .lbl { font-size: 10.5px; color: var(--text-dim); display: flex; justify-content: space-between; }
+
+#counters { padding: 8px 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-family: var(--mono); font-size: 11px; }
+#counters .c-item { display: flex; justify-content: space-between; gap: 6px; color: var(--text-dim); }
+#counters .c-item b { color: var(--text); font-weight: 600; }
+
+#inspector { min-height: 60px; max-height: 40vh; overflow: auto; }
+#inspector .body { padding: 10px 12px; font-family: var(--mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+#inspector .empty { color: var(--text-faint); font-style: italic; font-family: var(--sans); }
+#inspector .field { display: flex; gap: 8px; }
+#inspector .field .k { color: var(--text-dim); min-width: 64px; }
+#inspector .field .v { color: var(--accent-cyan); }
+
+#legend { padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--text-dim); }
+#legend .row { gap: 7px; }
+
+/* narration + scrubber footer */
+#footer { pointer-events: auto; margin: 0 10px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+
+#narration {
+  padding: 10px 14px; display: flex; align-items: center; gap: 12px; min-height: 20px;
+}
+#narration .event-tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 3px 7px; border-radius: 5px; background: rgba(41,211,255,0.14); color: var(--accent-cyan); flex: none;
+}
+#narration .text { font-size: 12.5px; color: var(--text); flex: 1; }
+#narration .text .term { color: var(--accent-amber); font-weight: 600; cursor: help; border-bottom: 1px dotted var(--accent-amber); }
+
+#scrubber-bar { display: flex; align-items: center; gap: 10px; padding: 6px 14px; }
+#scrubber-bar input[type=range] { flex: 1; }
+#scrubber-bar .tick-lbl { font-family: var(--mono); font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+
+#scenario-brief { position: fixed; left: 50%; top: 14%; transform: translateX(-50%); max-width: 560px; padding: 16px 20px; text-align: left; z-index: 20; pointer-events: auto; }
+#scenario-brief h2 { margin: 0 0 6px 0; font-size: 15px; color: #fff; }
+#scenario-brief p { margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+#scenario-brief .steps { font-family: var(--mono); font-size: 11px; color: var(--accent-cyan); }
+
+#boot-overlay {
+  position: fixed; inset: 0; z-index: 100; background: radial-gradient(ellipse at 50% 40%, #0c1220 0%, #05070c 70%);
+  display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: 18px;
+}
+#boot-overlay h1 { font-size: clamp(28px, 5vw, 48px); margin: 0; letter-spacing: 0.02em; color: #fff; font-weight: 800; }
+#boot-overlay h1 span { color: var(--accent-cyan); }
+#boot-overlay p { max-width: 560px; color: var(--text-dim); font-size: 13.5px; line-height: 1.6; margin: 0; }
+#boot-overlay button#enter-btn { padding: 12px 28px; font-size: 13.5px; background: var(--accent-cyan); color: #001018; border: none; font-weight: 700; letter-spacing: 0.02em; }
+#boot-overlay button#enter-btn:hover { background: #5fe3ff; }
+#boot-overlay .kbd-hint { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+
+#unsupported { position: fixed; inset: 0; z-index: 200; background: #05070c; color: var(--text); display: flex; align-items: center; justify-content: center; text-align: center; padding: 40px; }
+#unsupported .box { max-width: 480px; }
+#unsupported h2 { color: var(--accent-red); }
+
+.css2d-label {
+  font-family: var(--mono); font-size: 10px; color: var(--text); background: rgba(5,7,12,0.72);
+  padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); white-space: nowrap;
+  transform: translate(-50%, -140%);
+}
+.css2d-label.dim { color: var(--text-faint); font-size: 9px; }
+.css2d-label.floor-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); background: none; border: none; }
+
+#click-hint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 10.5px; color: var(--text-faint); z-index: 4; pointer-events: none; font-family: var(--mono); }
+
+@media (max-width: 860px) {
+  #left-stack, #right-stack { width: 160px; }
+  #title-block .t2 { display: none; }
+}
+@media (max-width: 640px) {
+  #title-block { display: none; }
+  #time-readout { display: none; }
+  #topbar { gap: 6px; }
+  #midrow { flex-direction: column; overflow-y: auto; gap: 6px; }
+  #left-stack, #right-stack { width: 100%; max-height: 30vh; flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+  #left-stack .panel, #right-stack .panel { width: auto; min-width: 140px; flex: 1 1 140px; max-height: 28vh; }
+  #left-stack .panel:has(#legend), #left-stack .panel:has(#cutaway-box) { display: none; } /* secondary panels make room for the essentials on small screens */
+  #scenario-brief { top: auto; bottom: 90px; left: 10px; right: 10px; transform: none; max-width: none; }
+  #scrubber-bar .tick-lbl { display: none; }
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #05070c; }
+}
+</style>
+</head>
+<body>
+
+<div id="unsupported" hidden>
+  <div class="box">
+    <h2>WebGL2 required</h2>
+    <p>THE MACHINE renders a live 3D scene and needs WebGL2. Try a recent Chrome, Firefox, Edge or Safari, with hardware acceleration enabled.</p>
+  </div>
+</div>
+
+<div id="boot-overlay">
+  <h1>THE MACHINE<br/><span>— an operating system you can fly through</span></h1>
+  <p>A small computer, actually executing instructions — a real x86-64 subset interpreter, real 4-level page tables, a real scheduler, a real TCP stack — rendered as a physical machine across four floors: user space, the syscall boundary, the kernel, and hardware. Nothing here is a pre-baked animation; every particle you see is a consequence of the simulation underneath.</p>
+  <button id="enter-btn">ENTER THE MACHINE</button>
+  <div class="kbd-hint">space = play/pause · . = step cycle · orbit-drag to look around · click any object to inspect it</div>
+</div>
+
+<div id="scene-container"></div>
+<div id="css2d-container"></div>
+<div id="click-hint" hidden>click any object — a core, a RAM frame, a socket — to inspect its real state</div>
+
+<div id="ui" hidden>
+  <div id="topbar">
+    <div id="title-block" class="panel" style="padding:6px 12px;">
+      <span class="t1">THE MACHINE</span>
+      <span class="t2">an OS you can fly through</span>
+    </div>
+
+    <div class="panel dilation-dial" id="dilation-dial">
+      <button data-dilation="cycle">1 cyc/step</button>
+      <button data-dilation="1000">1 kHz</button>
+      <button data-dilation="1000000">1 MHz</button>
+      <button data-dilation="real">real time</button>
+    </div>
+
+    <div class="panel" id="time-readout">t = <b id="t-sim">0.000 ns</b> &nbsp;·&nbsp; dilation <b id="t-dilation">1 : 1</b></div>
+
+    <div class="panel" id="transport">
+      <button class="icon-btn" id="btn-play" title="Play / Pause (space)">▶</button>
+      <button class="icon-btn" id="btn-step-cycle" title="Step one cycle (.)">⏭</button>
+      <button class="icon-btn" id="btn-step-instr" title="Step one instruction (i)">⏯︎</button>
+      <button class="icon-btn" id="btn-step-event" title="Step to next event (e)">⤼</button>
+      <button class="icon-btn" id="btn-reset" title="Restart scenario (r)">↺</button>
+    </div>
+
+    <div id="topbar-right">
+      <select id="scenario-select" title="Scenario"></select>
+      <button class="panel icon-btn" id="btn-camera-mode" title="Toggle orbit / free-fly camera (c)">⟲</button>
+      <button class="panel icon-btn" id="btn-follow" title="Follow the newest data token (f)">◎</button>
+    </div>
+  </div>
+
+  <div id="midrow">
+    <div id="left-stack">
+      <div class="panel">
+        <h3>Layers</h3>
+        <div class="layer-toggle-list" id="layer-list"></div>
+      </div>
+      <div class="panel">
+        <h3>Cutaway / Exploded View</h3>
+        <div id="cutaway-box">
+          <input type="range" id="cutaway-slider" min="0" max="100" value="0" />
+          <div class="lbl"><span>assembled</span><span>exploded</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Legend</h3>
+        <div id="legend"></div>
+      </div>
+    </div>
+
+    <div id="right-stack">
+      <div class="panel">
+        <h3>Counters</h3>
+        <div id="counters"></div>
+      </div>
+      <div class="panel" id="inspector">
+        <h3>Inspector</h3>
+        <div class="body"><span class="empty">click a core, a RAM frame, a socket, a run-queue slot…</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer">
+    <div class="panel" id="scrubber-bar">
+      <span class="tick-lbl" id="scrub-min">0</span>
+      <input type="range" id="scrubber" min="0" max="0" value="0" />
+      <span class="tick-lbl" id="scrub-max">0</span>
+    </div>
+    <div class="panel" id="narration">
+      <span class="event-tag" id="narration-tag">BOOT</span>
+      <span class="text" id="narration-text">Waiting for the machine to start…</span>
+    </div>
+  </div>
+</div>
+
+<div id="scenario-brief" class="panel" hidden>
+  <h2 id="brief-title"></h2>
+  <p id="brief-desc"></p>
+  <div class="steps" id="brief-steps"></div>
+</div>
+
+<script type="module">
+// ============================================================================
+// PART 1: SIMCORE — pasted in verbatim from sim-core.mjs (see repo history /
+// the standalone module for the same file with import/export statements).
+// ============================================================================
+// ============================================================================
+// SIMCORE — a deterministic, headless model of a small computer.
+// No rendering code lives here. No Three.js. No DOM. Pure state + logic.
+// Everything the 3D scene shows is a *consequence* of events emitted here.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Seeded RNG (mulberry32) — determinism: same seed + same tick count always
+// produces the same state, so the rewind ring-buffer and "replay" both work.
+// ---------------------------------------------------------------------------
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function rng() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Event bus — the only channel between SimCore and everything downstream
+// (the renderer, the narration panel, the counters). SimCore never reaches
+// back into the renderer; it just shouts into the void.
+// ---------------------------------------------------------------------------
+class EventBus {
+  constructor() { this.listeners = new Map(); this.log = []; this.logCap = 4000; }
+  on(type, fn) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(fn);
+    return () => this.off(type, fn);
+  }
+  off(type, fn) {
+    const arr = this.listeners.get(type);
+    if (arr) { const i = arr.indexOf(fn); if (i >= 0) arr.splice(i, 1); }
+  }
+  emit(type, payload) {
+    // Iterate a snapshot, not the live array: a handler that unsubscribes
+    // itself (very common — see the scripted-client handshake in Scenarios)
+    // would otherwise mutate the array mid-iteration and cause the *next*
+    // listener in line to be silently skipped for this one emit.
+    const arr = this.listeners.get(type);
+    if (arr) for (const fn of arr.slice()) fn(payload);
+    const all = this.listeners.get('*');
+    if (all) for (const fn of all.slice()) fn({ type, payload });
+    this.log.push({ type, payload, t: payload && payload.tick });
+    if (this.log.length > this.logCap) this.log.shift();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Constants — the "hardware datasheet". Cycle counts, sizes, syscall numbers.
+// Timer period and network/NVMe latencies are scaled down from real hardware
+// so the simulation stays interactive; ratios between them are preserved.
+// ---------------------------------------------------------------------------
+const CYCLES = { L1: 4, L2: 14, L3: 50, DRAM: 240 };
+const FRAME_SIZE = 4096;
+const TOTAL_FRAMES = 8192;                 // 32 MB of simulated physical RAM
+const KERNEL_FRAMES = 512;                  // reserved for kernel + page tables
+const TIMER_PERIOD_CYCLES = 4000;           // scaled 250Hz timer tick
+const TLB_SIZE = 64;
+const NVME_LATENCY_CYCLES = 1800;           // scaled ~100us SSD read
+const NET_LATENCY_CYCLES = 600;             // scaled wire delay
+const MTU = 1460;
+const LOCAL_IP = '10.0.0.5';
+
+const PTE = { PRESENT: 1, WRITABLE: 2, USER: 4, ACCESSED: 8, DIRTY: 16, NX: 32 };
+
+const SYSCALL = {
+  0: 'read', 1: 'write', 9: 'mmap', 56: 'clone', 59: 'execve',
+  41: 'socket', 202: 'futex', 232: 'epoll_wait', 257: 'openat', 288: 'accept4',
+};
+const SYSCALL_NUM = Object.fromEntries(Object.entries(SYSCALL).map(([k, v]) => [v, +k]));
+
+const RING = { KERNEL: 0, USER: 3 };
+const TASK_STATE = { RUNNING: 'RUNNING', RUNNABLE: 'RUNNABLE', SLEEPING: 'SLEEPING', ZOMBIE: 'ZOMBIE' };
+const GORO_STATE = { RUNNING: 'RUNNING', RUNNABLE: 'RUNNABLE', WAITING: 'WAITING', DEAD: 'DEAD' };
+
+// ---------------------------------------------------------------------------
+// Physical memory — one flat byte array (Uint8Array) + one metadata record
+// per 4KB frame. This is what the renderer turns into the InstancedMesh of
+// 8,192 frame cells: instance N's color comes directly from frameMeta[N].owner.
+// ---------------------------------------------------------------------------
+class PhysicalMemory {
+  constructor(totalFrames = TOTAL_FRAMES) {
+    this.totalFrames = totalFrames;
+    this.bytes = new Uint8Array(totalFrames * FRAME_SIZE);
+    this.meta = new Array(totalFrames);
+    for (let i = 0; i < totalFrames; i++) {
+      this.meta[i] = { owner: 'free', dirty: false, accessed: false, pinned: false, kind: 'free', tag: null };
+    }
+    this.freeList = [];
+    for (let i = totalFrames - 1; i >= KERNEL_FRAMES; i--) this.freeList.push(i);
+    for (let i = 0; i < KERNEL_FRAMES; i++) this.meta[i] = { owner: 'kernel', dirty: false, accessed: false, pinned: true, kind: 'kernel', tag: null };
+    this.nextKernelFrame = 1; // frame 0 reserved as "null"/sentinel
+  }
+  allocFrame(owner, kind = 'anon', tag = null) {
+    const f = this.freeList.pop();
+    if (f === undefined) throw new Error('OOM: no free physical frames');
+    this.meta[f] = { owner, dirty: false, accessed: false, pinned: false, kind, tag };
+    this.zeroFrame(f);
+    return f;
+  }
+  allocKernelFrame(kind, tag = null) {
+    const f = this.nextKernelFrame++;
+    if (f >= KERNEL_FRAMES) throw new Error('kernel frame pool exhausted');
+    this.meta[f] = { owner: 'kernel', dirty: false, accessed: false, pinned: true, kind, tag };
+    this.zeroFrame(f);
+    return f;
+  }
+  freeFrame(f) {
+    this.meta[f] = { owner: 'free', dirty: false, accessed: false, pinned: false, kind: 'free', tag: null };
+    this.freeList.push(f);
+  }
+  zeroFrame(f) { this.bytes.fill(0, f * FRAME_SIZE, (f + 1) * FRAME_SIZE); }
+  readU64(paddr) {
+    let v = 0n;
+    for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(this.bytes[paddr + i]);
+    return v;
+  }
+  writeU64(paddr, v) {
+    for (let i = 0; i < 8; i++) { this.bytes[paddr + i] = Number(v & 0xFFn); v >>= 8n; }
+  }
+  readI32(paddr) { return (this.bytes[paddr] | (this.bytes[paddr + 1] << 8) | (this.bytes[paddr + 2] << 16) | (this.bytes[paddr + 3] << 24)) | 0; }
+  writeI32(paddr, v) { this.bytes[paddr] = v & 0xFF; this.bytes[paddr + 1] = (v >> 8) & 0xFF; this.bytes[paddr + 2] = (v >> 16) & 0xFF; this.bytes[paddr + 3] = (v >> 24) & 0xFF; }
+}
+
+// ---------------------------------------------------------------------------
+// N-way set-associative cache with real tag/index/offset decomposition and
+// true LRU eviction. Used for L1i, L1d (per core), L2 (per core) and the
+// shared L3. Address -> {tag, index} via bit math, not string hashing.
+// ---------------------------------------------------------------------------
+class Cache {
+  constructor(name, sizeBytes, lineSize = 64, ways = 8) {
+    this.name = name;
+    this.lineSize = lineSize;
+    this.ways = ways;
+    this.sets = Math.max(1, Math.floor(sizeBytes / lineSize / ways));
+    this.offsetBits = Math.log2(lineSize);
+    this.indexBits = Math.log2(this.sets);
+    this.lines = new Array(this.sets);
+    for (let s = 0; s < this.sets; s++) {
+      this.lines[s] = new Array(ways).fill(null).map(() => ({ valid: false, tag: -1, dirty: false, lru: 0 }));
+    }
+    this.clock = 0;
+    this.stats = { hits: 0, misses: 0 };
+  }
+  decompose(addr) {
+    const offset = addr & ((1 << this.offsetBits) - 1);
+    const index = (addr >>> this.offsetBits) & ((1 << this.indexBits) - 1);
+    const tag = Math.floor(addr / (this.lineSize * this.sets));
+    return { tag, index, offset };
+  }
+  // Returns {hit:boolean, evicted: line-or-null}
+  access(addr, isWrite) {
+    this.clock++;
+    const { tag, index } = this.decompose(addr);
+    const set = this.lines[index];
+    for (const line of set) {
+      if (line.valid && line.tag === tag) {
+        line.lru = this.clock;
+        if (isWrite) line.dirty = true;
+        this.stats.hits++;
+        return { hit: true, index, tag };
+      }
+    }
+    this.stats.misses++;
+    // fill: find invalid line or evict true-LRU
+    let victim = set.find(l => !l.valid);
+    let evicted = null;
+    if (!victim) {
+      victim = set.reduce((a, b) => (a.lru <= b.lru ? a : b));
+      evicted = { tag: victim.tag, dirty: victim.dirty };
+    }
+    victim.valid = true; victim.tag = tag; victim.dirty = isWrite; victim.lru = this.clock;
+    return { hit: false, index, tag, evicted };
+  }
+  get hitRate() {
+    const t = this.stats.hits + this.stats.misses;
+    return t === 0 ? 1 : this.stats.hits / t;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MMU — 4-level page tables (PML4 -> PDPT -> PD -> PT) stored *in physical
+// memory* exactly like real hardware: each table is one 4KB frame holding
+// 512 x 8-byte entries. Walking the tables means reading real bytes out of
+// PhysicalMemory. A 64-entry TLB (CR3-tagged) short-circuits the walk.
+// ---------------------------------------------------------------------------
+class MMU {
+  constructor(mem, bus) {
+    this.mem = mem;
+    this.bus = bus;
+    this.tlb = new Map(); // key `${cr3}:${vpn}` -> {pfn, flags, lru}
+    this.tlbClock = 0;
+    this.stats = { tlbHits: 0, tlbMisses: 0, pageFaults: 0, walks: 0 };
+  }
+  static idx(va) {
+    const v = BigInt(va);
+    return {
+      pml4: Number((v >> 39n) & 0x1FFn),
+      pdpt: Number((v >> 30n) & 0x1FFn),
+      pd:   Number((v >> 21n) & 0x1FFn),
+      pt:   Number((v >> 12n) & 0x1FFn),
+      off:  Number(v & 0xFFFn),
+      vpn:  Number(v >> 12n),
+    };
+  }
+  newAddressSpace() {
+    const pml4Frame = this.mem.allocKernelFrame('pagetable', 'PML4');
+    return pml4Frame; // this becomes a process's CR3
+  }
+  // Ensure a table exists at entries[slot]; allocate one on demand ("real" OS
+  // behaviour: intermediate page-table levels are paged in lazily).
+  ensureTable(tableFrame, slot, flags) {
+    const base = tableFrame * FRAME_SIZE + slot * 8;
+    let entry = this.mem.readU64(base);
+    if ((entry & BigInt(PTE.PRESENT)) === 0n) {
+      const childFrame = this.mem.allocKernelFrame('pagetable');
+      entry = (BigInt(childFrame) << 12n) | BigInt(flags | PTE.PRESENT);
+      this.mem.writeU64(base, entry);
+    }
+    return Number(entry >> 12n);
+  }
+  // Map a virtual page to a physical frame in the given address space (cr3).
+  mapPage(cr3, va, pfn, flags = PTE.PRESENT | PTE.WRITABLE | PTE.USER) {
+    const { pml4, pdpt, pd, pt } = MMU.idx(va);
+    const pdptFrame = this.ensureTable(cr3, pml4, PTE.WRITABLE | PTE.USER);
+    const pdFrame = this.ensureTable(pdptFrame, pdpt, PTE.WRITABLE | PTE.USER);
+    const ptFrame = this.ensureTable(pdFrame, pd, PTE.WRITABLE | PTE.USER);
+    const base = ptFrame * FRAME_SIZE + pt * 8;
+    this.mem.writeU64(base, (BigInt(pfn) << 12n) | BigInt(flags));
+  }
+  unmapPage(cr3, va) {
+    const w = this.walk(cr3, va);
+    if (w.present) this.mem.writeU64(w.pteAddr, 0n);
+    this.flushVA(cr3, va);
+  }
+  // Real walk: read PML4E, PDPTE, PDE, PTE from physical memory. Does NOT
+  // allocate — that is the page-fault handler's job, not the MMU's.
+  walk(cr3, va) {
+    this.stats.walks++;
+    const { pml4, pdpt, pd, pt, off } = MMU.idx(va);
+    let frame = cr3;
+    for (const slot of [pml4, pdpt, pd]) {
+      const e = this.mem.readU64(frame * FRAME_SIZE + slot * 8);
+      if ((e & BigInt(PTE.PRESENT)) === 0n) return { present: false };
+      frame = Number(e >> 12n);
+    }
+    const pteAddr = frame * FRAME_SIZE + pt * 8;
+    const e = this.mem.readU64(pteAddr);
+    if ((e & BigInt(PTE.PRESENT)) === 0n) return { present: false, pteAddr };
+    return {
+      present: true, pteAddr, pfn: Number(e >> 12n),
+      writable: !!(e & BigInt(PTE.WRITABLE)), user: !!(e & BigInt(PTE.USER)),
+      dirty: !!(e & BigInt(PTE.DIRTY)), nx: !!(e & BigInt(PTE.NX)), paddr: Number(e >> 12n) * FRAME_SIZE + off,
+    };
+  }
+  markAccessedDirty(pteAddr, dirty) {
+    let e = this.mem.readU64(pteAddr);
+    e |= BigInt(PTE.ACCESSED);
+    if (dirty) e |= BigInt(PTE.DIRTY);
+    this.mem.writeU64(pteAddr, e);
+  }
+  // translate() is what the CPU calls. Returns {paddr} or {fault:true}.
+  // Goes TLB -> table walk -> (maybe) page fault, in that order, like silicon.
+  translate(cr3, va, isWrite, tick) {
+    const { vpn, off } = MMU.idx(va);
+    const key = `${cr3}:${vpn}`;
+    const tlbEntry = this.tlb.get(key);
+    if (tlbEntry) {
+      this.stats.tlbHits++;
+      tlbEntry.lru = ++this.tlbClock;
+      this.bus.emit('TLB_HIT', { tick, va, cr3 });
+      return { paddr: tlbEntry.pfn * FRAME_SIZE + off, fault: false };
+    }
+    this.stats.tlbMisses++;
+    this.bus.emit('TLB_MISS', { tick, va, cr3 });
+    const w = this.walk(cr3, va);
+    if (!w.present) {
+      this.stats.pageFaults++;
+      this.bus.emit('PAGE_FAULT', { tick, va, cr3, write: isWrite });
+      return { fault: true, va };
+    }
+    if (isWrite && !w.writable) {
+      this.bus.emit('PAGE_FAULT', { tick, va, cr3, write: true, protection: true });
+      return { fault: true, va, protection: true };
+    }
+    this.markAccessedDirty(w.pteAddr, isWrite);
+    this.tlbInsert(key, w.pfn);
+    return { paddr: w.paddr, fault: false };
+  }
+  tlbInsert(key, pfn) {
+    if (this.tlb.size >= TLB_SIZE) {
+      let victimKey = null, victimLru = Infinity;
+      for (const [k, v] of this.tlb) if (v.lru < victimLru) { victimLru = v.lru; victimKey = k; }
+      this.tlb.delete(victimKey);
+    }
+    this.tlb.set(key, { pfn, lru: ++this.tlbClock });
+  }
+  // Full TLB flush — happens on every context switch (CR3 write), just like
+  // a real CPU without PCID support.
+  flushAll(tick) { this.tlb.clear(); this.bus.emit('TLB_FLUSH', { tick, reason: 'context_switch' }); }
+  flushVA(cr3, va) { const { vpn } = MMU.idx(va); this.tlb.delete(`${cr3}:${vpn}`); }
+}
+
+// ---------------------------------------------------------------------------
+// Instruction set. Real x86-64 decodes variable-length byte opcodes; SimCore
+// instead represents each instruction as a small tagged object, e.g.
+// {op:'add', dst:'rax', src:'rbx'}. This is a deliberate simplification
+// (documented in the final report): it models the *architectural* behaviour
+// of fetch/decode/execute/memory/writeback faithfully — real registers, real
+// flags, real memory operands routed through the real MMU — without hand-
+// rolling a byte-level x86 disassembler, which would add complexity but no
+// pedagogical value here. mov/add/sub/cmp/jmp/jcc/push/pop/call/ret/lea/syscall.
+// ---------------------------------------------------------------------------
+const FLAG = { ZF: 1, SF: 2, CF: 4, OF: 8 };
+
+function isReg(x) { return typeof x === 'string' && REGS.includes(x); }
+const REGS = ['rax','rbx','rcx','rdx','rsi','rdi','rbp','rsp','r8','r9','r10','r11','r12','r13','r14','r15'];
+
+// Stamps each instruction with its own static address (== array index) and,
+// for `call`, the return address of the following instruction. Real x86-64
+// computes these from byte offsets during decode; here they're assigned once
+// up front since instructions are fixed-size slots in a flat program array.
+function compileProgram(instrs) {
+  instrs.forEach((ins, i) => { ins._addr = i; if (ins.op === 'call') ins._retAddr = i + 1; });
+  return instrs;
+}
+
+// ---------------------------------------------------------------------------
+// CPU core — 16 GPRs + RIP + RFLAGS + CR3, a privilege ring bit, and a real
+// 5-stage pipeline (fetch/decode/execute/memory/writeback). Each stage holds
+// at most one in-flight instruction slot; a memory-stage cache miss stalls
+// the *entire* pipeline for the miss latency, exactly like a real in-order
+// core with no out-of-order execution.
+// ---------------------------------------------------------------------------
+class Core {
+  constructor(id, mem, mmu, bus) {
+    this.id = id;
+    this.mem = mem; this.mmu = mmu; this.bus = bus;
+    this.regs = Object.fromEntries(REGS.map(r => [r, 0]));
+    this.rip = 0; this.rflags = 0; this.cr3 = 0; this.ring = RING.KERNEL;
+    this.program = []; // current task's instruction array
+    this.task = null;  // task_struct currently resident on this core
+    this.stages = { fetch: null, decode: null, execute: null, memory: null, writeback: null };
+    this.stallCycles = 0;
+    this.stallReason = null;
+    this.halted = false;
+    this.stats = { instrRetired: 0, cyclesBusy: 0, cyclesStalled: 0 };
+    this.l1i = new Cache(`core${id}.L1i`, 64 * 1024, 64, 4);
+    this.l1d = new Cache(`core${id}.L1d`, 64 * 1024, 64, 8);
+    this.l2 = new Cache(`core${id}.L2`, 1024 * 1024, 64, 8);
+    this.l3 = null; // assigned by Machine (shared)
+    this.retStack = []; // for visualising call/ret; not architectural
+  }
+
+  loadTask(task) {
+    this.task = task;
+    Object.assign(this.regs, task.regs);
+    this.rip = task.rip; this.rflags = task.rflags; this.cr3 = task.cr3; this.ring = task.ring;
+    this.program = task.program;
+    this.stages = { fetch: null, decode: null, execute: null, memory: null, writeback: null };
+    this.halted = false; // a core that went idle (halted) must wake up once real work is loaded
+    task.state = TASK_STATE.RUNNING;
+  }
+  saveTask() {
+    if (!this.task) return;
+    Object.assign(this.task.regs, this.regs);
+    this.task.rip = this.rip; this.task.rflags = this.rflags; this.task.cr3 = this.cr3; this.task.ring = this.ring;
+  }
+
+  setFlag(f, v) { this.rflags = v ? (this.rflags | f) : (this.rflags & ~f); }
+  getFlag(f) { return (this.rflags & f) !== 0; }
+
+  readOperand(x) {
+    if (isReg(x)) return this.regs[x];
+    if (typeof x === 'number') return x;
+    if (x && x.mem !== undefined) return this.loadMem(this.effAddr(x.mem));
+    return 0;
+  }
+  effAddr(m) {
+    // m: {base, disp} — a real [reg+disp] addressing mode
+    const base = m.base ? this.regs[m.base] : 0;
+    return base + (m.disp || 0);
+  }
+  // Memory access through the *real* cache hierarchy + MMU. Returns
+  // {value, latency} — latency drives the pipeline stall in the memory stage.
+  accessMem(va, isWrite, writeVal) {
+    const tick = this._tick;
+    const tr = this.mmu.translate(this.cr3, va, isWrite, tick);
+    if (tr.fault) return { fault: true, va, write: isWrite };
+    const paddr = tr.paddr;
+    let latency = CYCLES.L1;
+    const l1 = this.l1d.access(paddr, isWrite);
+    if (!l1.hit) {
+      latency = CYCLES.L2;
+      const l2 = this.l2.access(paddr, isWrite);
+      if (!l2.hit) {
+        latency = CYCLES.L3;
+        const l3 = this.l3.access(paddr, isWrite);
+        if (!l3.hit) latency = CYCLES.DRAM;
+      }
+    }
+    if (isWrite) { this.mem.writeI32(paddr, writeVal | 0); this.mem.meta[Math.floor(paddr / FRAME_SIZE)].dirty = true; }
+    const value = isWrite ? writeVal : this.mem.readI32(paddr);
+    return { value, latency, fault: false, paddr };
+  }
+  loadMem(va) { const r = this.accessMem(va, false); return r.fault ? 0 : r.value; }
+
+  // Advance one cycle. Returns a small trace object the event bus turns into
+  // INSTR_FETCH / pipeline events for the renderer.
+  tick(tickNo, onFault, onSyscall) {
+    this._tick = tickNo;
+    this.stats.cyclesBusy++;
+    if (this.halted) return;
+    if (this.stallCycles > 0) { this.stallCycles--; this.stats.cyclesStalled++; return; }
+
+    // Writeback stage retires whatever finished memory last cycle.
+    if (this.stages.writeback) { this.stats.instrRetired++; this.stages.writeback = null; }
+    this.stages.writeback = this.stages.memory; this.stages.memory = null;
+
+    // Memory stage: perform the actual access for the instruction that
+    // reached it (may stall the whole pipeline — set stallCycles and bail).
+    if (this.stages.execute) {
+      const instr = this.stages.execute;
+      const result = this.execInstr(instr, onFault, onSyscall);
+      if (result === 'fault' || result === 'syscall') {
+        // Both cases just pinned RIP to the exact correct resume point
+        // (see onFault / the 'syscall' case above) — which is *not* where
+        // the pipeline had spliceulatively fetched ahead to. Those
+        // in-flight decode/fetch instructions were speculatively pulled
+        // using the old, too-far-advanced RIP and must be discarded so the next fetch
+        // re-reads starting from the correct address instead of silently
+        // skipping whatever was fetched-but-never-executed in between.
+        this.stages.execute = null;
+        this.stages.decode = null;
+        this.stages.fetch = null;
+        return;
+      }
+      if (result === 'halted') {
+        this.stages.execute = null;
+        return;
+      }
+      if (result && result.stall) {
+        this.stallCycles = result.stall - 1;
+        this.stages.memory = instr;
+        this.stages.execute = null;
+        return;
+      }
+      this.stages.memory = instr;
+      this.stages.execute = null;
+    }
+
+    this.stages.execute = this.stages.decode; this.stages.decode = null;
+    this.stages.decode = this.stages.fetch; this.stages.fetch = null;
+
+    // Fetch stage: pull next instruction via the L1i (also a real access).
+    if (!this.halted && this.rip < this.program.length) {
+      const instrAddr = this.rip * 16; // synthetic .text address for cache modelling
+      this.l1i.access(instrAddr, false);
+      const instr = this.program[this.rip];
+      this.bus.emit('INSTR_FETCH', { tick: tickNo, core: this.id, rip: this.rip, instr });
+      this.stages.fetch = instr;
+      this.rip++;
+    }
+  }
+
+  // Execute+memory combined (SimCore doesn't need separate structural stage
+  // objects beyond scheduling — the *timing* is what's modelled above).
+  execInstr(instr, onFault, onSyscall) {
+    const op = instr.op;
+    switch (op) {
+      case 'mov': {
+        if (instr.dst.mem !== undefined) {
+          const r = this.accessMem(this.effAddr(instr.dst.mem), true, this.readOperand(instr.src));
+          if (r.fault) { this.rip = instr._addr; onFault(this, instr.dst.mem); return 'fault'; }
+          return { stall: r.latency };
+        }
+        if (instr.src && instr.src.mem !== undefined) {
+          const r = this.accessMem(this.effAddr(instr.src.mem), false);
+          if (r.fault) { this.rip = instr._addr; onFault(this, instr.src.mem); return 'fault'; }
+          this.regs[instr.dst] = r.value;
+          return { stall: r.latency };
+        }
+        this.regs[instr.dst] = this.readOperand(instr.src);
+        return { stall: 1 };
+      }
+      case 'lea': { this.regs[instr.dst] = this.effAddr(instr.src.mem); return { stall: 1 }; }
+      case 'add': { const v = (this.regs[instr.dst] + this.readOperand(instr.src)) | 0; this.setArith(v); this.regs[instr.dst] = v; return { stall: 1 }; }
+      case 'sub': { const v = (this.regs[instr.dst] - this.readOperand(instr.src)) | 0; this.setArith(v); this.regs[instr.dst] = v; return { stall: 1 }; }
+      case 'cmp': { const v = (this.regs[instr.dst] - this.readOperand(instr.src)) | 0; this.setArith(v); return { stall: 1 }; }
+      case 'jmp': { this.rip = instr.target; this.flushFetched(); return { stall: 1 }; }
+      case 'jcc': {
+        if (this.evalCC(instr.cc)) { this.rip = instr.target; this.flushFetched(); }
+        return { stall: 1 };
+      }
+      case 'push': {
+        const addr = this.regs.rsp - 8;
+        const r = this.accessMem(addr, true, this.readOperand(instr.src));
+        if (r.fault) { this.rip = instr._addr; onFault(this, { base: 'rsp', disp: -8 }); return 'fault'; }
+        this.regs.rsp = addr;
+        return { stall: r.latency };
+      }
+      case 'pop': {
+        const r = this.accessMem(this.regs.rsp, false);
+        if (r.fault) { this.rip = instr._addr; onFault(this, { base: 'rsp', disp: 0 }); return 'fault'; }
+        this.regs[instr.dst] = r.value; this.regs.rsp += 8;
+        return { stall: r.latency };
+      }
+      case 'call': {
+        const addr = this.regs.rsp - 8;
+        const r = this.accessMem(addr, true, instr._retAddr);
+        if (r.fault) { this.rip = instr._addr; onFault(this, { base: 'rsp', disp: -8 }); return 'fault'; }
+        this.regs.rsp = addr;
+        this.retStack.push(instr._retAddr);
+        this.rip = instr.target; this.flushFetched();
+        return { stall: 2 };
+      }
+      case 'ret': {
+        const r = this.accessMem(this.regs.rsp, false);
+        if (r.fault) { this.rip = instr._addr; onFault(this, { base: 'rsp', disp: 0 }); return 'fault'; }
+        this.regs.rsp += 8;
+        this.rip = r.value; this.flushFetched();
+        this.retStack.pop();
+        return { stall: 2 };
+      }
+      case 'syscall': {
+        // RIP must be pinned to "the instruction right after this one"
+        // *before* the kernel runs — not left at wherever the pipeline had
+        // speculatively fetched ahead to. Real hardware retires in order;
+        // ours fetches several instructions ahead of what's actually
+        // executed, so left alone, core.rip overshoots past instructions
+        // that were fetched but never really ran (this bit us for real:
+        // a blocked accept4() lost the three instructions after it because
+        // the saved resume RIP pointed past them). onFault-style instructions
+        // already self-correct RIP the same way; syscalls need to too,
+        // since a blocking syscall calls saveTask() before we return here.
+        this.rip = instr._addr + 1;
+        onSyscall(this, this.regs.rax);
+        return 'syscall';
+      }
+      case 'hlt': { this.halted = true; return 'halted'; }
+      case 'nop': return { stall: 1 };
+      default: throw new Error('unknown op ' + op);
+    }
+  }
+  setArith(v) {
+    this.setFlag(FLAG.ZF, v === 0);
+    this.setFlag(FLAG.SF, v < 0);
+  }
+  evalCC(cc) {
+    switch (cc) {
+      case 'e': case 'z': return this.getFlag(FLAG.ZF);
+      case 'ne': case 'nz': return !this.getFlag(FLAG.ZF);
+      case 'l': return this.getFlag(FLAG.SF) !== this.getFlag(FLAG.OF);
+      case 'ge': return this.getFlag(FLAG.SF) === this.getFlag(FLAG.OF);
+      case 'g': return !this.getFlag(FLAG.ZF) && this.getFlag(FLAG.SF) === this.getFlag(FLAG.OF);
+      case 'le': return this.getFlag(FLAG.ZF) || this.getFlag(FLAG.SF) !== this.getFlag(FLAG.OF);
+      default: return false;
+    }
+  }
+  flushFetched() { this.stages.fetch = null; this.stages.decode = null; }
+}
+
+// ---------------------------------------------------------------------------
+// task_struct — one per kernel-schedulable thread (this includes each Go "M"
+// OS thread). Holds the architectural state that gets saved/restored on a
+// context switch, plus scheduling metadata.
+// ---------------------------------------------------------------------------
+let _pidCounter = 1;
+class TaskStruct {
+  constructor(proc, { priority = 20, program = [], entry = 0 } = {}) {
+    this.pid = _pidCounter++;
+    this.proc = proc; // owning Process (address space)
+    this.regs = Object.fromEntries(REGS.map(r => [r, 0]));
+    this.rip = entry; this.rflags = 0; this.cr3 = proc ? proc.cr3 : 0; this.ring = RING.USER;
+    this.program = program;
+    this.state = TASK_STATE.RUNNABLE;
+    this.priority = priority;
+    this.timeslice = priority;
+    this.runtimeTicks = 0;
+    this.wakeAt = null; // tick at which a sleeping task becomes runnable
+    this.blockedOn = null; // description of what it's waiting for
+    this.core = null; // core id currently resident on, or null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Process — an address space: CR3 root, memory regions (stack/heap/text),
+// fd table, and the set of threads (task_structs) belonging to it.
+// ---------------------------------------------------------------------------
+let _pidSpace = 1;
+class Process {
+  constructor(name, mmu, mem) {
+    this.id = _pidSpace++;
+    this.name = name;
+    this.mmu = mmu; this.mem = mem;
+    this.cr3 = mmu.newAddressSpace();
+    this.regions = { text: null, heap: null, stack: null };
+    this.fds = new Map(); // fd -> {kind, ...}
+    this.fds.set(0, { kind: 'stdio', name: 'stdin' });
+    this.fds.set(1, { kind: 'stdio', name: 'stdout' });
+    this.fds.set(2, { kind: 'stdio', name: 'stderr' });
+    this._nextFd = 3;
+    this.threads = [];
+    this.goroutines = null; // set for the Go process
+  }
+  allocFd(entry) { const fd = this._nextFd++; this.fds.set(fd, entry); return fd; }
+  mapRegion(name, vaStart, npages, flags) {
+    for (let i = 0; i < npages; i++) {
+      const pfn = this.mem.allocFrame(`proc:${this.name}`, name, this.id);
+      this.mmu.mapPage(this.cr3, vaStart + i * FRAME_SIZE, pfn, flags);
+    }
+    this.regions[name] = { start: vaStart, pages: npages };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interrupt controller — IRQ lines + a softirq (bottom-half) queue. The
+// timer line fires every TIMER_PERIOD_CYCLES and is what actually drives
+// preemptive scheduling; other lines are raised by the NIC/NVMe models.
+// ---------------------------------------------------------------------------
+class InterruptController {
+  constructor(bus) {
+    this.bus = bus;
+    this.pending = []; // top-half queue: {line, meta}
+    this.softirq = [];  // bottom-half queue: {kind, meta}
+  }
+  raise(line, meta, tick) {
+    this.pending.push({ line, meta });
+    this.bus.emit('IRQ_RAISED', { tick, line, meta });
+  }
+  raiseSoftirq(kind, meta) { this.softirq.push({ kind, meta }); }
+}
+
+// ---------------------------------------------------------------------------
+// Block layer + a tiny ext4-ish filesystem: inodes, a page cache, a single
+// NVMe command queue with real completion latency and an IRQ on completion.
+// ---------------------------------------------------------------------------
+class BlockDevice {
+  constructor(bus, mem) {
+    this.bus = bus; this.mem = mem;
+    this.inodes = new Map(); // path -> {ino, size, blocks:[data...]}
+    this.pageCache = new Map(); // `${ino}:${blockNo}` -> frame
+    this.queue = []; // {cmd, ino, blockNo, tick, completeAt, cb}
+    this._ino = 1;
+  }
+  createFile(path, sizeBytes = 4096) {
+    const ino = this._ino++;
+    const nblocks = Math.ceil(sizeBytes / FRAME_SIZE);
+    this.inodes.set(path, { ino, size: sizeBytes, nblocks });
+    return ino;
+  }
+  submit(cmd, ino, blockNo, tick, cb) {
+    const completeAt = tick + NVME_LATENCY_CYCLES;
+    this.queue.push({ cmd, ino, blockNo, completeAt, cb });
+    this.bus.emit('NVME_SUBMIT', { tick, cmd, ino, blockNo });
+  }
+  step(tick, irq) {
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      const req = this.queue[i];
+      if (tick >= req.completeAt) {
+        this.queue.splice(i, 1);
+        this.bus.emit('DMA_WRITE', { tick, cmd: req.cmd, ino: req.ino, blockNo: req.blockNo });
+        irq.raise('nvme', { req }, tick);
+        req.cb(req);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TCP/IP — enough of the real state machine to show a 3-way handshake, seq/
+// ack bookkeeping, MTU segmentation and one retransmission.
+// ---------------------------------------------------------------------------
+class Socket {
+  constructor(id, kind = 'tcp') {
+    this.id = id; this.kind = kind;
+    this.state = 'CLOSED';
+    this.localSeq = 0; this.remoteSeq = 0;
+    this.sendBuf = []; this.recvBuf = [];
+    this.local = null; this.remote = null; // {ip, port}
+    this.backlog = [];
+    this.epollRegistered = false;
+    this.owner = null; // pid
+  }
+}
+
+class NetStack {
+  constructor(bus, rng) {
+    this.bus = bus; this.rng = rng;
+    this.wire = []; // in-flight packets: {seq, ack, flags, payload, deliverAt, from, to}
+    this.sockets = new Map();
+    this._sid = 1;
+    this._seq = 1000;
+  }
+  createSocket(kind = 'tcp') { const s = new Socket(this._sid++, kind); this.sockets.set(s.id, s); return s; }
+  send(pkt, tick, dropIt = false) {
+    pkt.deliverAt = tick + NET_LATENCY_CYCLES;
+    pkt.dropped = dropIt;
+    this.wire.push(pkt);
+    this.bus.emit('PACKET_SENT', { tick, pkt });
+  }
+  step(tick, onDeliver) {
+    for (let i = this.wire.length - 1; i >= 0; i--) {
+      const p = this.wire[i];
+      if (tick >= p.deliverAt) {
+        this.wire.splice(i, 1);
+        if (p.dropped) { this.bus.emit('PACKET_DROPPED', { tick, pkt: p }); continue; }
+        this.bus.emit('PACKET_RECV', { tick, pkt: p });
+        onDeliver(p);
+      }
+    }
+  }
+  segment(payloadLen) {
+    const n = Math.max(1, Math.ceil(payloadLen / MTU));
+    return new Array(n).fill(0).map((_, i) => Math.min(MTU, payloadLen - i * MTU));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Go runtime model — G/M/P. Goroutines (G) are cheap plain objects scheduled
+// by *this* layer, not by the kernel. Only M's (OS threads) are real
+// task_structs the kernel scheduler knows about. This is what makes "10,000
+// goroutines on 4 OS threads" both correct and cheap to simulate.
+// ---------------------------------------------------------------------------
+class Goroutine {
+  constructor(id, fn) {
+    this.id = id; this.fn = fn; this.state = GORO_STATE.RUNNABLE; this.pc = 0; this.blockedOn = null;
+    this.workLeft = 20; this.willBlock = false; this.fd = id; this.ioLatency = 0; this._blockedOnce = false;
+  }
+}
+class GoRuntime {
+  constructor(bus, proc, gomaxprocs = 4) {
+    this.bus = bus; this.proc = proc;
+    this.gomaxprocs = gomaxprocs;
+    this.Ps = new Array(gomaxprocs).fill(0).map((_, i) => ({ id: i, runq: [], m: null }));
+    this.Ms = []; // OS threads (task_structs), assigned to a P while running
+    this.Gs = new Map();
+    this.netpoller = new Map(); // fd -> [goroutineId]
+    this._gid = 1;
+  }
+  spawn(fn) {
+    const g = new Goroutine(this._gid++, fn);
+    g.state = GORO_STATE.RUNNABLE;
+    this.Gs.set(g.id, g);
+    this.Ps[g.id % this.gomaxprocs].runq.push(g.id);
+    this.bus.emit('GOROUTINE_SPAWN', { tick: this._tick || 0, id: g.id, proc: this.proc.name });
+    return g;
+  }
+  parkOnIO(g, fd) {
+    g.state = GORO_STATE.WAITING; g.blockedOn = fd;
+    if (!this.netpoller.has(fd)) this.netpoller.set(fd, []);
+    this.netpoller.get(fd).push(g.id);
+    this.bus.emit('GOROUTINE_WAKE', { tick: this._tick, id: g.id, action: 'park', fd });
+  }
+  wakeFd(fd, tick) {
+    const waiters = this.netpoller.get(fd);
+    if (!waiters || !waiters.length) return;
+    this.netpoller.delete(fd);
+    for (const gid of waiters) {
+      const g = this.Gs.get(gid);
+      if (!g) continue;
+      g.state = GORO_STATE.RUNNABLE;
+      this.Ps[gid % this.gomaxprocs].runq.push(gid);
+      this.bus.emit('GOROUTINE_WAKE', { tick, id: gid, action: 'unpark', fd });
+    }
+  }
+  // Called by the kernel whenever an M (task_struct) needs work: pop a G off
+  // its P's run queue. Returns a goroutine id or null (M goes idle).
+  scheduleOnM(m, tick) {
+    const p = this.Ps.find(p => p.m === m) || this.Ps.find(p => !p.m);
+    if (!p) return null;
+    p.m = m;
+    const gid = p.runq.shift();
+    if (gid == null) return null;
+    const g = this.Gs.get(gid);
+    g.state = GORO_STATE.RUNNING;
+    return g;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Kernel — scheduler, syscall dispatch, page-fault handler, context switch,
+// interrupt bottom halves. This is the piece that turns "four CPUs executing
+// instructions" into "an operating system".
+// ---------------------------------------------------------------------------
+class Kernel {
+  constructor(machine) {
+    this.m = machine;
+    this.bus = machine.bus;
+    this.mem = machine.mem;
+    this.mmu = machine.mmu;
+    this.irq = new InterruptController(this.bus);
+    this.block = new BlockDevice(this.bus, this.mem);
+    this.net = new NetStack(this.bus, machine.rng);
+    this.runQueues = machine.cores.map(() => []);
+    this.tasks = new Map(); // pid -> task
+    this.processes = new Map(); // id -> process
+    this.stats = { syscalls: 0, contextSwitches: 0, interrupts: 0, pageFaults: 0 };
+    this.sleeping = []; // {task, wakeAt} for time-based wakes (rare; most wakes are event-based)
+  }
+
+  createProcess(name) {
+    const proc = new Process(name, this.mmu, this.mem);
+    this.processes.set(proc.id, proc);
+    this.bus.emit('PROCESS_CREATED', { tick: this.m.tick_, id: proc.id, name: proc.name, cr3: proc.cr3 });
+    return proc;
+  }
+  spawnThread(proc, opts) {
+    const task = new TaskStruct(proc, opts);
+    proc.threads.push(task);
+    this.tasks.set(task.pid, task);
+    this.bus.emit('TASK_CREATED', { tick: this.m.tick_, pid: task.pid, proc: proc.name, procId: proc.id, priority: task.priority });
+    return task;
+  }
+  enqueue(task, coreId) {
+    task.state = TASK_STATE.RUNNABLE;
+    const cid = coreId != null ? coreId : this.leastLoadedCore();
+    this.runQueues[cid].push(task);
+  }
+  // Round-robins the tie-break instead of always favouring core 0: with a
+  // strict "<" comparison, several cores tied at queue-length 0 would
+  // otherwise always resolve to the same lowest index, silently starving
+  // the higher-numbered cores of any work at all (found via the manyGoroutines
+  // scenario: only 2 of 4 cores were ever actually running anything).
+  leastLoadedCore() {
+    this._rrCursor = ((this._rrCursor ?? -1) + 1) % this.runQueues.length;
+    let best = this._rrCursor, bestLen = this.runQueues[best].length;
+    for (let k = 1; k < this.runQueues.length; k++) {
+      const i = (this._rrCursor + k) % this.runQueues.length;
+      if (this.runQueues[i].length < bestLen) { bestLen = this.runQueues[i].length; best = i; }
+    }
+    return best;
+  }
+
+  // -- scheduler --------------------------------------------------------
+  pickNext(coreId) { return this.runQueues[coreId].shift() || null; }
+
+  contextSwitch(core, tick) {
+    const prev = core.task;
+    core.saveTask();
+    if (prev) {
+      if (prev.state === TASK_STATE.RUNNING) { prev.state = TASK_STATE.RUNNABLE; this.runQueues[core.id].push(prev); }
+    }
+    const next = this.pickNext(core.id);
+    this.stats.contextSwitches++;
+    if (!next) {
+      core.task = null; core.halted = true;
+      this.bus.emit('CONTEXT_SWITCH', { tick, core: core.id, from: prev ? prev.pid : null, to: null, idle: true });
+      return;
+    }
+    const switchingAS = !prev || prev.cr3 !== next.cr3;
+    core.loadTask(next);
+    next.core = core.id;
+    next.timeslice = next.priority;
+    if (switchingAS) this.mmu.flushAll(tick);
+    this.bus.emit('CONTEXT_SWITCH', {
+      tick, core: core.id, from: prev ? prev.pid : null, to: next.pid,
+      fromProc: prev ? prev.proc.name : null, toProc: next.proc.name, flushedTLB: switchingAS,
+    });
+  }
+
+  // Called once per tick, per core, before the core executes: handles timer
+  // preemption. Real hardware: the timer IRQ's handler calls schedule().
+  timerTick(core, tick) {
+    if (tick % TIMER_PERIOD_CYCLES !== 0) return;
+    this.irq.raise('timer', { core: core.id }, tick);
+    this.stats.interrupts++;
+    if (!core.task) { if (this.runQueues[core.id].length) this.contextSwitch(core, tick); return; }
+    core.task.timeslice--;
+    core.task.runtimeTicks += TIMER_PERIOD_CYCLES;
+    if (core.task.timeslice <= 0 && this.runQueues[core.id].length > 0) {
+      this.contextSwitch(core, tick);
+    }
+  }
+
+  // -- page faults --------------------------------------------------------
+  // Real path: hardware traps to #PF handler -> kernel allocates a physical
+  // frame, zeroes it, installs the PTE, and *re-executes* the faulting
+  // instruction (core.rip was already rewound to it by the CPU model).
+  handlePageFault(core, memOperand, tick) {
+    this.stats.pageFaults++;
+    const va = core.effAddr(memOperand);
+    const task = core.task;
+    this.bus.emit('SYSCALL_ENTER', { tick, core: core.id, pid: task.pid, name: '#PF', trap: true });
+    const pfn = this.mem.allocFrame(`proc:${task.proc.name}`, 'anon-fault', task.proc.id);
+    this.mmu.mapPage(task.proc.cr3, va & ~0xFFF, pfn, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    this.mmu.flushVA(task.proc.cr3, va);
+    this.bus.emit('PAGE_FAULT_RESOLVED', { tick, core: core.id, pid: task.pid, va, pfn });
+  }
+
+  // -- syscalls -------------------------------------------------------------
+  handleSyscall(core, num, tick) {
+    this.stats.syscalls++;
+    const task = core.task;
+    core.ring = RING.KERNEL; // the ring-3 -> ring-0 transition through the gate plane
+    const name = SYSCALL[num] || `sys_${num}`;
+    this.bus.emit('SYSCALL_ENTER', { tick, core: core.id, pid: task.pid, num, name });
+    const blocked = this.dispatchSyscall(task, core, name, tick);
+    if (blocked) {
+      task.state = TASK_STATE.SLEEPING;
+      task.blockedOn = blocked;
+      this.contextSwitch(core, tick);
+    } else {
+      core.ring = RING.USER;
+      this.bus.emit('SYSCALL_EXIT', { tick, core: core.id, pid: task.pid, name });
+    }
+  }
+
+  // Returns a description of what the task is blocked on, or null/undefined
+  // if the syscall completed synchronously.
+  // NOTE: every syscall arg/retval below goes through core.regs, never
+  // task.regs. task.regs is only a snapshot, written by Core.saveTask() at
+  // the *next* context switch — while this task is the one actually running
+  // on `core`, core.regs is the only live copy. (This bit us once already:
+  // see the clone() entry-point fix a few lines up in the diff history.)
+  dispatchSyscall(task, core, name, tick) {
+    const r = core.regs;
+    switch (name) {
+      case 'write': {
+        const fd = r.rdi;
+        const entry = task.proc.fds.get(fd);
+        if (entry && entry.kind === 'socket') {
+          const sock = this.net.sockets.get(entry.sockId);
+          if (sock && sock.peerId != null) {
+            this.net.send({ from: sock.id, to: sock.peerId, flags: 'DATA', payload: r.rdx || 1 }, tick);
+          }
+          r.rax = r.rdx;
+          return null;
+        }
+        this.block.submit('write', task.proc.id, fd, tick, () => {});
+        r.rax = r.rdx; // bytes written
+        return null;
+      }
+      case 'read': {
+        const fd = r.rdi;
+        const entry = task.proc.fds.get(fd);
+        if (entry && entry.kind === 'socket') {
+          const sock = this.net.sockets.get(entry.sockId);
+          if (sock.recvBuf.length) { r.rax = sock.recvBuf.shift(); return null; }
+          return { kind: 'socket_read', fd };
+        }
+        r.rax = 0;
+        return null;
+      }
+      case 'openat': {
+        const ino = this.block.createFile(`/file${r.rsi}`, 4096);
+        const fd = task.proc.allocFd({ kind: 'file', ino });
+        r.rax = fd;
+        return null;
+      }
+      case 'mmap': {
+        const npages = Math.max(1, Math.ceil(r.rsi / FRAME_SIZE));
+        const base = 0x600000 + task.proc.threads.length * 0x100000;
+        task.proc.mapRegion('mmap' + tick, base, npages, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+        r.rax = base;
+        return null;
+      }
+      // rdi is used as a small "how to open this socket" hint. The real
+      // syscall table given to us has no bind/listen/connect numbers, so a
+      // server socket() call configures itself as a listener directly, and
+      // a client-side loopback connect (used for the in-machine db query)
+      // is resolved synchronously against the target's listen backlog.
+      // Documented simplification — see final report.
+      case 'socket': {
+        const sock = this.net.createSocket('tcp');
+        sock.owner = task.proc.id;
+        if (r.rdi === 1) { // SOCK_LISTEN hint
+          sock.state = 'LISTEN'; sock.local = { ip: LOCAL_IP, port: r.rsi || 8080 };
+          this.bus.emit('SOCKET_STATE', { tick, sock: sock.id, state: 'LISTEN', port: sock.local.port, proc: task.proc.name });
+        } else if (r.rdi === 2) { // SOCK_CONNECT hint: rsi = target port
+          const target = [...this.net.sockets.values()].find(s => s.state === 'LISTEN' && s.local && s.local.port === r.rsi);
+          if (target) {
+            sock.state = 'ESTABLISHED'; sock.remote = target.local; sock.remoteSeq = 1; sock.localSeq = this.net._seq++;
+            const peer = this.net.createSocket('tcp');
+            peer.state = 'ESTABLISHED'; peer.local = target.local; peer.remote = { ip: LOCAL_IP, port: 0 };
+            peer.owner = null;
+            target.backlog.push(peer.id);
+            sock.peerId = peer.id; peer.peerId = sock.id;
+            this.bus.emit('SOCKET_STATE', { tick, sock: sock.id, state: 'ESTABLISHED' });
+            this.wakeBlockedOn('accept', { fd: null }, tick);
+          }
+        }
+        const fd = task.proc.allocFd({ kind: 'socket', sockId: sock.id });
+        r.rax = fd;
+        return null;
+      }
+      case 'accept4': {
+        const fd = r.rdi;
+        const entry = task.proc.fds.get(fd);
+        const listener = entry && this.net.sockets.get(entry.sockId);
+        if (listener && listener.backlog.length) {
+          const connId = listener.backlog.shift();
+          const cfd = task.proc.allocFd({ kind: 'socket', sockId: connId });
+          r.rax = cfd;
+          return null;
+        }
+        return { kind: 'accept', fd };
+      }
+      case 'epoll_wait': {
+        // Level-triggered: if the fd already has data sitting in its
+        // buffer, epoll_wait returns immediately instead of blocking for an
+        // arrival event that has already happened.
+        const fd = r.rdi;
+        const entry = task.proc.fds.get(fd);
+        const sock = entry && this.net.sockets.get(entry.sockId);
+        if (sock && sock.recvBuf.length) { r.rax = fd; return null; }
+        return { kind: 'epoll', fd };
+      }
+      case 'futex': { r.rax = 0; return null; }
+      case 'clone': {
+        // entry must be the *live* RIP (core.rip) — task.rip is only synced
+        // back to the task_struct on a context switch (see Core.saveTask),
+        // so it can be stale while this task is the one currently running.
+        const child = this.spawnThread(task.proc, { priority: task.priority, program: task.program, entry: core.rip });
+        Object.assign(child.regs, r); // copy the *live* register file, not the stale task.regs
+        child.regs.rax = 0; // real fork/clone semantics: child sees 0, parent sees the child's pid
+        this.enqueue(child);
+        r.rax = child.pid;
+        this.bus.emit('THREAD_CLONE', { tick, parent: task.pid, child: child.pid, proc: task.proc.name });
+        return null;
+      }
+      case 'execve': { r.rax = 0; return null; }
+      default: return null;
+    }
+  }
+
+  // -- interrupts -----------------------------------------------------------
+  // Drains the top-half queue (fast, just acks + schedules softirq work),
+  // then drains softirqs (the slower bottom-half work: TCP processing, waking
+  // sleepers). Split top/bottom halves is a real Linux design choice: keep
+  // the IRQ handler itself microscopically short.
+  drainInterrupts(tick) {
+    while (this.irq.pending.length) {
+      const { line, meta } = this.irq.pending.shift();
+      if (line === 'nvme') this.irq.raiseSoftirq('block_complete', meta);
+      else if (line === 'net') this.irq.raiseSoftirq('net_rx', meta);
+    }
+    while (this.irq.softirq.length) {
+      const { kind, meta } = this.irq.softirq.shift();
+      if (kind === 'block_complete') this.wakeBlockedOn('nvme', meta, tick);
+      if (kind === 'net_rx') this.handlePacket(meta.pkt, tick);
+    }
+  }
+
+  wakeTask(task, tick) {
+    task.state = TASK_STATE.RUNNABLE;
+    task.blockedOn = null;
+    task.ring = RING.USER;
+    this.enqueue(task);
+  }
+  // Unlike a plain "wake everyone waiting on X", a blocked syscall must be
+  // *completed* on wake (its return value set), not merely resumed — RIP is
+  // already past the `syscall` instruction, so the kernel finishes the op
+  // itself here, exactly like a real handler returning from schedule().
+  wakeBlockedOn(kind, meta, tick) {
+    for (const task of this.tasks.values()) {
+      if (task.state !== TASK_STATE.SLEEPING || !task.blockedOn || task.blockedOn.kind !== kind) continue;
+      if (kind === 'accept') {
+        const entry = task.proc.fds.get(task.blockedOn.fd);
+        const listener = entry && this.net.sockets.get(entry.sockId);
+        if (!listener || !listener.backlog.length) continue;
+        const connId = listener.backlog.shift();
+        const cfd = task.proc.allocFd({ kind: 'socket', sockId: connId });
+        task.regs.rax = cfd;
+      } else if (kind === 'socket_read') {
+        const entry = task.proc.fds.get(task.blockedOn.fd);
+        const sock = entry && this.net.sockets.get(entry.sockId);
+        if (!sock || !sock.recvBuf.length) continue;
+        task.regs.rax = sock.recvBuf.shift();
+      } else if (kind === 'epoll') {
+        task.regs.rax = task.blockedOn.fd || 1;
+      } else if (kind === 'nvme') {
+        task.regs.rax = 0;
+      } else if (kind === 'go_idle') {
+        // handled by stepGoRuntime, which calls wakeTask directly
+      }
+      this.wakeTask(task, tick);
+    }
+  }
+
+  // -- networking -------------------------------------------------------
+  // A TCP-ish handshake + data path. `from`/`to` are Socket ids on our own
+  // simulated wire; `peerId` links two established sockets so write() knows
+  // where to deliver bytes without re-resolving routing every time.
+  handlePacket(pkt, tick) {
+    const sock = this.net.sockets.get(pkt.to);
+    if (!sock) return;
+    if (pkt.flags === 'SYN' && sock.state === 'LISTEN') {
+      const conn = this.net.createSocket('tcp');
+      conn.state = 'SYN_RCVD'; conn.local = sock.local; conn.remote = pkt.fromAddr; conn.peerId = pkt.from;
+      conn.remoteSeq = pkt.seq + 1; conn.localSeq = this.net._seq++;
+      this.net.send({ from: sock.id, to: pkt.from, flags: 'SYN-ACK', seq: conn.localSeq, ack: conn.remoteSeq, connId: conn.id }, tick);
+      sock.pendingConn = conn;
+      this.bus.emit('SOCKET_STATE', { tick, sock: conn.id, state: conn.state });
+      return;
+    }
+    if (pkt.flags === 'SYN-ACK') {
+      sock.state = 'ESTABLISHED'; sock.remoteSeq = pkt.seq + 1; sock.peerId = pkt.connId;
+      this.net.send({ from: sock.id, to: pkt.from, flags: 'ACK', seq: sock.localSeq + 1, ack: sock.remoteSeq }, tick);
+      this.bus.emit('SOCKET_STATE', { tick, sock: sock.id, state: 'ESTABLISHED' });
+      return;
+    }
+    if (pkt.flags === 'ACK' && sock.pendingConn) {
+      const conn = sock.pendingConn; conn.state = 'ESTABLISHED'; sock.pendingConn = null;
+      sock.backlog.push(conn.id);
+      this.bus.emit('SOCKET_STATE', { tick, sock: conn.id, state: 'ESTABLISHED' });
+      this.wakeBlockedOn('accept', { fd: null }, tick);
+      return;
+    }
+    if (pkt.flags === 'DATA') {
+      sock.recvBuf.push(pkt.payload);
+      this.bus.emit('SOCKET_RECV', { tick, sock: sock.id, bytes: pkt.payload });
+      this.wakeBlockedOn('socket_read', { fd: null }, tick);
+      this.wakeBlockedOn('epoll', { fd: null }, tick);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Machine — owns every subsystem, advances the simulation one cycle at a
+// time, and maintains the rewind ring buffer. This is the only object the
+// renderer talks to.
+//
+// Rewind strategy: a capped ring buffer of lightweight, *architectural*
+// snapshots (registers, run queues, RAM ownership grid, socket/goroutine
+// state, cumulative counters) is captured every tick, cheaply — cloning the
+// 8,192-entry frame-owner grid (bytes) but never the 32MB raw memory
+// contents. Scrubbing inside that window is O(1). Scrubbing further back
+// than the window falls back to a full deterministic replay from tick 0
+// (same seed -> same events, always), which is what "pixel-identical state"
+// actually depends on, not the snapshot cache.
+// ---------------------------------------------------------------------------
+class Machine {
+  constructor(seed = 1) {
+    this.seed = seed;
+    this.rng = mulberry32(seed);
+    this.bus = new EventBus();
+    this.tick_ = 0;
+    this.mem = new PhysicalMemory();
+    this.mmu = new MMU(this.mem, this.bus);
+    this.l3 = new Cache('L3', 32 * 1024 * 1024, 64, 16);
+    this.cores = [0, 1, 2, 3].map(i => new Core(i, this.mem, this.mmu, this.bus));
+    for (const c of this.cores) c.l3 = this.l3;
+    this.kernel = new Kernel(this);
+    this.goRuntimes = new Map(); // process id -> GoRuntime
+    this.history = [];
+    this.historyCap = 1200;
+    // At high time-dilation the renderer may call step() thousands of times
+    // per animation frame; snapshotting is the expensive part of a tick
+    // (it walks all 8,192 frame owners), so it's throttled to every Nth
+    // tick there instead of every one — the renderer raises this alongside
+    // its dilation setting. Determinism (same seed -> same events) is
+    // unaffected: this only changes how many *snapshots* of that one true
+    // run get kept, never the run itself.
+    this.snapshotStride = 1;
+    this.scenario = null;
+    this.paused = true;
+    this.scheduled = []; // scenario-scripted callbacks: {tick, fn}
+    this.onFaultBound = (core, memOperand) => this.kernel.handlePageFault(core, memOperand, this.tick_);
+    this.onSyscallBound = (core, num) => this.kernel.handleSyscall(core, num, this.tick_);
+  }
+  // Lets a scenario script "external world" events (a client dialing in,
+  // a disk arriving) at an absolute future tick without hand-rolling its own
+  // per-tick bookkeeping. Purely a scenario-authoring convenience — SimCore's
+  // own subsystems never use this; they react to real state, not a timer.
+  scheduleAt(tick, fn) { this.scheduled.push({ tick, fn }); }
+
+  // ---- one cycle --------------------------------------------------------
+  step() {
+    const tick = this.tick_;
+    if (this.scheduled.length) {
+      for (let i = this.scheduled.length - 1; i >= 0; i--) {
+        if (this.scheduled[i].tick <= tick) { const [job] = this.scheduled.splice(i, 1); job.fn(); }
+      }
+    }
+    for (const core of this.cores) {
+      if (!core.task && this.kernel.runQueues[core.id].length) this.kernel.contextSwitch(core, tick);
+      this.kernel.timerTick(core, tick);
+      if (core.task) core.tick(tick, this.onFaultBound, this.onSyscallBound);
+    }
+    this.kernel.block.step(tick, this.kernel.irq);
+    this.kernel.net.step(tick, pkt => this.kernel.irq.raise('net', { pkt }, tick));
+    this.kernel.drainInterrupts(tick);
+    for (const gr of this.goRuntimes.values()) this.stepGoRuntime(gr, tick);
+    if (tick % this.snapshotStride === 0) this.snapshot(tick);
+    this.tick_++;
+    return this.tick_;
+  }
+  run(n) { for (let i = 0; i < n; i++) this.step(); }
+
+  // Go scheduler layer: goroutines are cheap logical objects multiplexed
+  // onto a handful of *real* OS threads (M task_structs, scheduled by the
+  // real kernel run queues). "Running" a goroutine here means counting down
+  // its work budget rather than executing separately-compiled instructions
+  // per goroutine (see final report) — but park/unpark, the netpoller
+  // registration, and the M:P:core assignment are the real scheduling state
+  // machine, which is the actual point of the G/M/P model.
+  stepGoRuntime(gr, tick) {
+    gr._tick = tick;
+    for (const m of gr.Ms) {
+      if (m.state === TASK_STATE.SLEEPING && m.blockedOn && m.blockedOn.kind === 'go_idle') {
+        const g = gr.scheduleOnM(m, tick);
+        if (g) { m.currentGoroutine = g.id; this.kernel.wakeTask(m, tick); }
+        continue;
+      }
+      if (m.state !== TASK_STATE.RUNNING) continue;
+      if (!m.currentGoroutine) {
+        const g = gr.scheduleOnM(m, tick);
+        if (g) m.currentGoroutine = g.id; else this.goIdle(m, tick);
+        continue;
+      }
+      const g = gr.Gs.get(m.currentGoroutine);
+      if (!g) { m.currentGoroutine = null; continue; }
+      g.workLeft--;
+      if (g.workLeft > 0) continue;
+      if (g.willBlock && !g._blockedOnce) {
+        g._blockedOnce = true;
+        gr.parkOnIO(g, g.fd);
+        (gr.pendingIO ??= []).push({ fd: g.fd, readyAt: tick + g.ioLatency });
+        m.currentGoroutine = null;
+        this.goIdle(m, tick);
+      } else {
+        g.state = GORO_STATE.DEAD;
+        gr.Gs.delete(g.id);
+        m.currentGoroutine = null;
+        const next = gr.scheduleOnM(m, tick);
+        if (next) m.currentGoroutine = next.id; else this.goIdle(m, tick);
+      }
+    }
+    if (gr.pendingIO) {
+      for (let i = gr.pendingIO.length - 1; i >= 0; i--) {
+        const io = gr.pendingIO[i];
+        if (tick >= io.readyAt) { gr.pendingIO.splice(i, 1); gr.wakeFd(io.fd, tick); }
+      }
+    }
+  }
+  goIdle(m, tick) {
+    m.state = TASK_STATE.SLEEPING; m.blockedOn = { kind: 'go_idle' };
+    if (m.core != null && this.cores[m.core].task === m) this.kernel.contextSwitch(this.cores[m.core], tick);
+  }
+
+  // ---- rewind -------------------------------------------------------------
+  snapshot(tick) {
+    const owners = new Uint16Array(this.mem.totalFrames);
+    for (let i = 0; i < this.mem.totalFrames; i++) owners[i] = OWNER_CODES.code(this.mem.meta[i].owner);
+    const snap = {
+      tick,
+      cores: this.cores.map(c => ({
+        regs: { ...c.regs }, rip: c.rip, rflags: c.rflags, cr3: c.cr3, ring: c.ring,
+        stalled: c.stallCycles > 0, halted: c.halted, taskPid: c.task ? c.task.pid : null,
+        stages: { fetch: c.stages.fetch?.op || null, decode: c.stages.decode?.op || null, execute: c.stages.execute?.op || null, memory: c.stages.memory?.op || null, writeback: c.stages.writeback?.op || null },
+        stats: { ...c.stats },
+      })),
+      owners,
+      tasks: [...this.kernel.tasks.values()].map(t => ({ pid: t.pid, proc: t.proc.name, state: t.state, core: t.core, priority: t.priority })),
+      runQueueLens: this.kernel.runQueues.map(q => q.length),
+      sockets: [...this.kernel.net.sockets.values()].map(s => ({ id: s.id, state: s.state })),
+      counters: {
+        cycles: tick, contextSwitches: this.kernel.stats.contextSwitches, syscalls: this.kernel.stats.syscalls,
+        interrupts: this.kernel.stats.interrupts, pageFaults: this.kernel.stats.pageFaults,
+        tlbHits: this.mmu.stats.tlbHits, tlbMisses: this.mmu.stats.tlbMisses,
+        l1dHitRate: avgHitRate(this.cores.map(c => c.l1d)), l2HitRate: avgHitRate(this.cores.map(c => c.l2)), l3HitRate: this.l3.hitRate,
+        instrRetired: this.cores.reduce((a, c) => a + c.stats.instrRetired, 0),
+      },
+    };
+    this.history.push(snap);
+    if (this.history.length > this.historyCap) this.history.shift();
+    return snap;
+  }
+  latestSnapshot() { return this.history[this.history.length - 1]; }
+  // Binary search for the nearest snapshot at or before `tick`. Snapshots
+  // aren't necessarily one per tick (see snapshotStride), so this can't
+  // just index by offset — the ring buffer is sparse at high dilation.
+  findSnapshot(tick) {
+    const h = this.history;
+    if (!h.length || tick < h[0].tick) return null;
+    if (tick >= h[h.length - 1].tick) return h[h.length - 1];
+    let lo = 0, hi = h.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (h[mid].tick <= tick) lo = mid; else hi = mid - 1;
+    }
+    return h[lo];
+  }
+
+  // ---- inspector ------------------------------------------------------
+  dumpRegisters(coreId) { const c = this.cores[coreId]; return { ...c.regs, rip: c.rip, rflags: c.rflags, cr3: c.cr3, ring: c.ring }; }
+  dumpFrame(pfn) { return { pfn, ...this.mem.meta[pfn] }; }
+}
+
+const OWNER_CODES = (() => {
+  const map = new Map(); let next = 1;
+  return { code(owner) { if (owner === 'free') return 0; if (owner === 'kernel') return 1; if (!map.has(owner)) map.set(owner, next++); return map.get(owner); }, map };
+})();
+function avgHitRate(caches) { const t = caches.reduce((a, c) => a + c.stats.hits + c.stats.misses, 0); const h = caches.reduce((a, c) => a + c.stats.hits, 0); return t === 0 ? 1 : h / t; }
+
+// ---------------------------------------------------------------------------
+// Tiny assembler: turns [{label?}, instr, instr, {label:'loop'}, instr, ...]
+// into a flat, address-resolved program compileProgram() can stamp. Lets
+// scenario code write `jmp('loop')` instead of hand-computing indices.
+// ---------------------------------------------------------------------------
+function assemble(lines) {
+  const labels = {};
+  const flat = [];
+  for (const l of lines) {
+    if (l.label !== undefined) { labels[l.label] = flat.length; continue; }
+    flat.push(l);
+  }
+  for (const ins of flat) {
+    if (ins.target !== undefined && typeof ins.target === 'string') ins.target = labels[ins.target];
+  }
+  return compileProgram(flat);
+}
+const mov = (dst, src) => ({ op: 'mov', dst, src });
+const add = (dst, src) => ({ op: 'add', dst, src });
+const sub = (dst, src) => ({ op: 'sub', dst, src });
+const cmp = (dst, src) => ({ op: 'cmp', dst, src });
+const jmp = (target) => ({ op: 'jmp', target });
+const jcc = (cc, target) => ({ op: 'jcc', cc, target });
+const push = (src) => ({ op: 'push', src });
+const pop = (dst) => ({ op: 'pop', dst });
+const call = (target) => ({ op: 'call', target });
+const ret = () => ({ op: 'ret' });
+const lea = (dst, src) => ({ op: 'lea', dst, src });
+const sys = (num) => [mov('rax', num), { op: 'syscall' }];
+const hlt = () => ({ op: 'hlt' });
+const nop = () => ({ op: 'nop' });
+const label = (name) => ({ label: name });
+const M = (base, disp = 0) => ({ mem: { base, disp } });
+
+// ---------------------------------------------------------------------------
+// Scenarios — each seeds a Machine with processes/programs/state, then the
+// sim runs free under the normal tick loop. Nothing here is "scripted
+// animation"; it's initial conditions for the same deterministic machine.
+// ---------------------------------------------------------------------------
+const Scenarios = {
+  helloWorld(m) {
+    const proc = m.kernel.createProcess('hello');
+    proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    proc.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    proc.mapRegion('heap', 0x200000, 2, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const program = assemble([
+      mov('rax', 10),                 // x = 10
+      mov(M('rbp', -8), 'rax'),       // spill x
+      mov('rbx', 20),                 // y = 20
+      mov(M('rbp', -16), 'rbx'),      // spill y
+      mov('rax', M('rbp', -8)),       // reload x
+      mov('rcx', M('rbp', -16)),      // reload y
+      add('rax', 'rcx'),              // z = x + y
+      mov(M('rbp', -24), 'rax'),      // spill z
+      hlt(),
+    ]);
+    const task = m.kernel.spawnThread(proc, { program, entry: 0, priority: 20 });
+    task.regs.rbp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    task.regs.rsp = task.regs.rbp;
+    m.kernel.enqueue(task, 0);
+    return { proc, task };
+  },
+
+  pageFault(m) {
+    const proc = m.kernel.createProcess('faulter');
+    proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    proc.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    // heap region is *reserved* (VA range known) but NOT mapped -> first
+    // touch is a genuine demand-paging fault, handled start to finish.
+    const program = assemble([
+      mov('rax', 0x300000),
+      mov(M('rax', 0), 99),  // touch unmapped heap page -> #PF
+      mov('rbx', M('rax', 0)),
+      hlt(),
+    ]);
+    const task = m.kernel.spawnThread(proc, { program, entry: 0, priority: 20 });
+    task.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    m.kernel.enqueue(task, 0);
+    return { proc, task };
+  },
+
+  contextSwitch(m) {
+    const mk = (name) => {
+      const proc = m.kernel.createProcess(name);
+      proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+      proc.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+      const program = assemble([
+        label('loop'),
+        mov('rax', M('rbx', 0)),
+        add('rax', 1),
+        mov(M('rbx', 0), 'rax'),
+        cmp('rax', 1_000_000),
+        jcc('l', 'loop'),
+        hlt(),
+      ]);
+      const task = m.kernel.spawnThread(proc, { program, entry: 0, priority: 8 });
+      task.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+      task.regs.rbx = 0x7ff000;
+      return task;
+    };
+    const a = mk('alpha'), b = mk('beta');
+    m.kernel.enqueue(a, 0); m.kernel.enqueue(b, 0);
+    return { a, b };
+  },
+
+  cacheThrash(m, mode = 'sequential') {
+    const proc = m.kernel.createProcess('thrasher');
+    proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    proc.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    proc.mapRegion('heap', 0x400000, 64, PTE.PRESENT | PTE.WRITABLE | PTE.USER); // 256KB > L2
+    const lines = [mov('rcx', 0), mov('rbx', 0x400000), label('loop')];
+    if (mode === 'sequential') {
+      lines.push(mov(M('rbx', 0), 'rcx'), add('rbx', 64), add('rcx', 1), cmp('rcx', 4096), jcc('l', 'loop'));
+    } else {
+      lines.push(mov('rax', 'rcx'), { op: 'add', dst: 'rax', src: 2654435761 % 4096 }, mov(M('rax', 0), 'rcx'), add('rcx', 1), cmp('rcx', 4096), jcc('l', 'loop'));
+    }
+    lines.push(hlt());
+    const program = assemble(lines);
+    const task = m.kernel.spawnThread(proc, { program, entry: 0, priority: 20 });
+    task.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    m.kernel.enqueue(task, 0);
+    return { proc, task };
+  },
+
+  fsync(m) {
+    const proc = m.kernel.createProcess('writer');
+    proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    proc.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const program = assemble([...sys(SYSCALL_NUM.openat), mov('rdi', 'rax'), mov('rsi', 4096), mov('rdx', 100),
+      ...sys(SYSCALL_NUM.write), hlt()]);
+    const task = m.kernel.spawnThread(proc, { program, entry: 0, priority: 20 });
+    task.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    m.kernel.enqueue(task, 0);
+    return { proc, task };
+  },
+
+  // Boot: kernel creates the first user process and execve's it (modelled
+  // as directly installing its program — a real kernel would page in an ELF
+  // from the block device first; we do model that page-in step explicitly).
+  boot(m) {
+    const proc = m.kernel.createProcess('init');
+    m.kernel.block.createFile('/bin/server', 16384);
+    proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    proc.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const program = assemble([...sys(SYSCALL_NUM.execve), hlt()]);
+    const task = m.kernel.spawnThread(proc, { program, entry: 0, priority: 20 });
+    task.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    m.kernel.enqueue(task, 0);
+    return { proc, task };
+  },
+
+  // Scenario 5 — a full HTTP request, narrated step by step: NIC receives a
+  // SYN -> IRQ -> softirq -> TCP handshake -> socket backlog -> accept4 ->
+  // clone() spawns a handler -> epoll_wait -> read -> a loopback "db query"
+  // to a second real process -> write response -> NIC send. Every hop is a
+  // real syscall against the real kernel; only the external client (which
+  // isn't part of the machine being simulated) is scripted.
+  httpRequest(m) {
+    const server = m.kernel.createProcess('go-server');
+    server.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    server.mapRegion('stack', 0x7ff000, 8, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const serverProgram = assemble([
+      mov('rdi', 1), mov('rsi', 8080), ...sys(SYSCALL_NUM.socket), mov('r8', 'rax'),
+      label('acceptloop'),
+      mov('rdi', 'r8'), ...sys(SYSCALL_NUM.accept4), mov('r9', 'rax'),
+      ...sys(SYSCALL_NUM.clone),
+      cmp('rax', 0), jcc('ne', 'acceptloop'),
+      // --- child (the "goroutine") continues here with r9 = connfd ---
+      mov('rdi', 'r9'), ...sys(SYSCALL_NUM.epoll_wait),
+      mov('rdi', 'r9'), ...sys(SYSCALL_NUM.read),
+      add('rax', 1), add('rax', 1), add('rax', 1),      // handler compute
+      mov('rdi', 2), mov('rsi', 5432), ...sys(SYSCALL_NUM.socket), mov('r10', 'rax'),
+      mov('rdi', 'r10'), mov('rdx', 1), ...sys(SYSCALL_NUM.write),   // send query
+      mov('rdi', 'r10'), ...sys(SYSCALL_NUM.read),                  // wait for db row
+      mov('rdi', 'r9'), mov('rdx', 1), ...sys(SYSCALL_NUM.write),   // write response
+      hlt(),
+    ]);
+    const serverTask = m.kernel.spawnThread(server, { program: serverProgram, entry: 0, priority: 20 });
+    serverTask.regs.rsp = 0x7ff000 + 8 * FRAME_SIZE - 8;
+    m.kernel.enqueue(serverTask, 0);
+
+    const db = m.kernel.createProcess('database');
+    db.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    db.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    db.mapRegion('table', 0x500000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const dbProgram = assemble([
+      mov('rdi', 1), mov('rsi', 5432), ...sys(SYSCALL_NUM.socket), mov('r8', 'rax'),
+      label('acceptloop'),
+      mov('rdi', 'r8'), ...sys(SYSCALL_NUM.accept4), mov('r9', 'rax'),
+      mov('rdi', 'r9'), ...sys(SYSCALL_NUM.epoll_wait),
+      mov('rdi', 'r9'), ...sys(SYSCALL_NUM.read),
+      mov('rax', 0x500000), mov('rbx', M('rax', 0)), add('rbx', 1), mov(M('rax', 0), 'rbx'), // touch the "table"
+      mov('rdi', 'r9'), mov('rdx', 1), ...sys(SYSCALL_NUM.write),
+      jmp('acceptloop'),
+    ]);
+    const dbTask = m.kernel.spawnThread(db, { program: dbProgram, entry: 0, priority: 20 });
+    dbTask.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    m.kernel.enqueue(dbTask, 1);
+
+    // The third concurrent process required by the brief: a CPU-bound job
+    // with no I/O at all, sharing the machine with the two I/O-bound ones.
+    const cpu = m.kernel.createProcess('cpu-bound');
+    cpu.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    cpu.mapRegion('stack', 0x7ff000, 4, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const cpuProgram = assemble([label('loop'), add('rax', 1), cmp('rax', 5_000_000), jcc('l', 'loop'), hlt()]);
+    const cpuTask = m.kernel.spawnThread(cpu, { program: cpuProgram, entry: 0, priority: 20 });
+    cpuTask.regs.rsp = 0x7ff000 + 4 * FRAME_SIZE - 8;
+    m.kernel.enqueue(cpuTask, 2);
+
+    // External client: not part of the machine being simulated. It only
+    // needs to inject two things onto the wire — the opening SYN, and the
+    // HTTP request once ESTABLISHED — because Kernel.handlePacket already
+    // treats every Socket symmetrically: the generic SYN-ACK handler runs
+    // for *any* socket that receives one (client or server-side), so the
+    // client's own ACK reply falls out of the real kernel path for free
+    // and doesn't need to be scripted here.
+    const unsubListen = m.bus.on('SOCKET_STATE', (ev) => {
+      if (ev.state !== 'LISTEN' || ev.port !== 8080) return;
+      unsubListen();
+      m.scheduleAt(ev.tick + 300, () => {
+        const client = m.kernel.net.createSocket('tcp');
+        client.local = { ip: '203.0.113.42', port: 51000 };
+        client.localSeq = 500;
+        const unsubEst = m.bus.on('SOCKET_STATE', (e2) => {
+          if (e2.sock !== client.id || e2.state !== 'ESTABLISHED') return;
+          unsubEst();
+          m.scheduleAt(e2.tick + 50, () => {
+            m.kernel.net.send({ from: client.id, to: client.peerId, flags: 'DATA', payload: 'GET /' }, e2.tick);
+          });
+        });
+        m.kernel.net.send({ from: client.id, to: ev.sock, flags: 'SYN', seq: client.localSeq }, m.tick_);
+      });
+    });
+    return { server, db, cpu };
+  },
+
+  // Scenario 6 — 10,000 goroutines multiplexed onto 4 OS threads on 4 cores.
+  // Only the M's are real task_structs the kernel schedules; the G's are
+  // logical objects the Go-runtime layer schedules on top. Most goroutines
+  // sit WAITING (parked on synthetic I/O) at any instant — exactly like a
+  // real connection-per-goroutine server under load.
+  manyGoroutines(m, count = 10000, gomaxprocs = 4) {
+    const proc = m.kernel.createProcess('go-server');
+    proc.mapRegion('text', 0x1000, 1, PTE.PRESENT | PTE.USER);
+    proc.mapRegion('stack', 0x7ff000, 4 * gomaxprocs, PTE.PRESENT | PTE.WRITABLE | PTE.USER);
+    const gr = new GoRuntime(m.bus, proc, gomaxprocs);
+    m.goRuntimes.set(proc.id, gr);
+    const mProgram = assemble([label('loop'), nop(), jmp('loop')]); // the M's own instruction stream is idle busywork; real work is tracked by the Go-runtime layer (see stepGoRuntime)
+    for (let i = 0; i < gomaxprocs; i++) {
+      const task = m.kernel.spawnThread(proc, { program: mProgram, entry: 0, priority: 30 });
+      task.regs.rsp = 0x7ff000 + (i + 1) * 4 * FRAME_SIZE - 8;
+      task.isGoM = true;
+      gr.Ms.push(task);
+      m.kernel.enqueue(task, i % 4);
+    }
+    for (let i = 0; i < count; i++) {
+      const g = gr.spawn(null);
+      g.workLeft = 4 + Math.floor(m.rng() * 20);
+      g.willBlock = m.rng() < 0.85;
+      g.ioLatency = 100 + Math.floor(m.rng() * 3000);
+    }
+    return { proc, gr };
+  },
+};
+
+
+// ============================================================================
+// PART 2: RENDERER — subscribes to the SimCore event bus, owns no simulation
+// state of its own. Everything below reacts to events; it never reaches back
+// into Machine except to read state for display (inspector, counters).
+// ============================================================================
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+// ---------------------------------------------------------------------------
+// WebGL2 gate
+// ---------------------------------------------------------------------------
+function hasWebGL2() {
+  try { const c = document.createElement('canvas'); return !!c.getContext('webgl2'); } catch (e) { return false; }
+}
+if (!hasWebGL2()) {
+  document.getElementById('unsupported').hidden = false;
+  throw new Error('WebGL2 unsupported');
+}
+const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 720;
+
+// ---------------------------------------------------------------------------
+// Palette — the visual thesis in six colors.
+// ---------------------------------------------------------------------------
+const COLOR = {
+  user: 0xffb000,      // amber — user mode / ring 3
+  kernel: 0x29d3ff,     // cyan — kernel mode / ring 0
+  irq: 0xff4d4d,        // red — hardware interrupt
+  data: 0x4dff9e,       // green — data in motion
+  free: 0x2e3a54,
+  kernelMem: 0xb48dff,
+  bg: 0x05070c,
+};
+function procColor(name) {
+  // stable hash -> hue, so the same process always gets the same color
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const hue = (h % 360) / 360;
+  return new THREE.Color().setHSL(hue, 0.55, 0.55);
+}
+
+// ---------------------------------------------------------------------------
+// Scene / camera / renderers
+// ---------------------------------------------------------------------------
+const container = document.getElementById('scene-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(COLOR.bg);
+scene.fog = new THREE.FogExp2(COLOR.bg, 0.0065);
+
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(26, 21, 30);
+
+const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
+container.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(window.innerWidth, window.innerHeight);
+document.getElementById('css2d-container').appendChild(labelRenderer.domElement);
+
+// Selective-ish bloom: a single UnrealBloomPass tuned to a high luminance
+// threshold, so only strongly emissive materials (active paths, tokens)
+// bloom while normal geometry stays clean — an approximation of true
+// per-layer selective bloom, which needs a second render target and a
+// composite shader; documented as a simplification in the final report.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.55, 0.72);
+bloomPass.enabled = !isMobile;
+composer.addPass(bloomPass);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.target.set(0, 15, 0);
+orbit.enableDamping = true;
+orbit.dampingFactor = 0.08;
+orbit.minDistance = 6;
+orbit.maxDistance = 140;
+orbit.maxPolarAngle = Math.PI * 0.49;
+orbit.update();
+
+// Lighting: dark scene, high contrast, a few directional accents.
+scene.add(new THREE.AmbientLight(0x3a4a68, 2.2));
+const key = new THREE.DirectionalLight(0xbfe3ff, 1.4);
+key.position.set(20, 40, 18);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x5577bb, 0.8);
+rim.position.set(-25, 10, -20);
+scene.add(rim);
+const fill = new THREE.HemisphereLight(0x2a3550, 0x0a0e16, 1.1);
+scene.add(fill);
+
+// ---------------------------------------------------------------------------
+// Free-fly camera
+// ---------------------------------------------------------------------------
+let cameraMode = 'orbit'; // 'orbit' | 'freefly'
+const fly = { fwd: 0, back: 0, left: 0, right: 0, up: 0, down: 0, yaw: 0, pitch: 0, dragging: false };
+function setCameraMode(mode) {
+  cameraMode = mode;
+  orbit.enabled = (mode === 'orbit');
+  document.getElementById('btn-camera-mode').classList.toggle('active', mode === 'freefly');
+}
+renderer.domElement.addEventListener('pointerdown', (e) => { if (cameraMode === 'freefly' && e.button === 0) { fly.dragging = true; renderer.domElement.requestPointerLock?.(); } });
+window.addEventListener('pointerup', () => { fly.dragging = false; });
+window.addEventListener('mousemove', (e) => {
+  if (cameraMode !== 'freefly' || !fly.dragging) return;
+  fly.yaw -= e.movementX * 0.0022;
+  fly.pitch -= e.movementY * 0.0022;
+  fly.pitch = Math.max(-1.4, Math.min(1.4, fly.pitch));
+});
+function updateFreefly(dt) {
+  if (cameraMode !== 'freefly') return;
+  const euler = new THREE.Euler(fly.pitch, fly.yaw, 0, 'YXZ');
+  camera.quaternion.setFromEuler(euler);
+  const speed = (fly.boost ? 42 : 16) * dt;
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  const move = new THREE.Vector3();
+  move.addScaledVector(fwd, (fly.fwd - fly.back));
+  move.addScaledVector(right, (fly.right - fly.left));
+  move.y += (fly.up - fly.down);
+  if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+  camera.position.add(move);
+}
+
+// ---------------------------------------------------------------------------
+// Layout constants — a vertical stack of four floors.
+// ---------------------------------------------------------------------------
+const FLOOR = { hardware: 0, kernel: 13, syscall: 22, userspace: 30 };
+const FLOOR_HALF = 15;
+
+const layerGroups = {
+  hardware: new THREE.Group(),
+  kernel: new THREE.Group(),
+  syscall: new THREE.Group(),
+  userspace: new THREE.Group(),
+  particles: new THREE.Group(),
+  labels: new THREE.Group(),
+};
+Object.values(layerGroups).forEach(g => scene.add(g));
+
+let explodeFactor = 0; // 0..1, driven by the cutaway slider
+const EXPLODE_STEP = 6;
+const FLOOR_EXPLODE_MULT = { hardware: 0, kernel: 1, syscall: 2, userspace: 3 };
+function applyExplode() {
+  const extra = explodeFactor * EXPLODE_STEP;
+  layerGroups.hardware.position.y = 0;
+  layerGroups.kernel.position.y = extra * FLOOR_EXPLODE_MULT.kernel;
+  layerGroups.syscall.position.y = extra * FLOOR_EXPLODE_MULT.syscall;
+  layerGroups.userspace.position.y = extra * FLOOR_EXPLODE_MULT.userspace;
+  // layerGroups.labels never explodes (its children span every floor), so
+  // any label meant to travel with a specific floor is tracked separately
+  // and repositioned here in lock-step with that floor's real offset.
+  for (const entry of explodableLabels) {
+    entry.obj.position.y = entry.baseY + extra * FLOOR_EXPLODE_MULT[entry.floorKey];
+  }
+}
+const explodableLabels = [];
+function addFloorLabel(l, floorKey) {
+  layerGroups.labels.add(l);
+  explodableLabels.push({ obj: l, floorKey, baseY: l.position.y });
+  return l;
+}
+
+// ---------------------------------------------------------------------------
+// Materials (shared, disposed on teardown)
+// ---------------------------------------------------------------------------
+const disposables = [];
+function track(x) { disposables.push(x); return x; }
+const matFloor = track(new THREE.MeshStandardMaterial({ color: 0x18202f, roughness: 0.9, metalness: 0.1, transparent: true, opacity: 0.65 }));
+const matBoard = track(new THREE.MeshStandardMaterial({ color: 0x232e44, roughness: 0.75, metalness: 0.3 }));
+const matDie = track(new THREE.MeshStandardMaterial({ color: 0x35486e, roughness: 0.35, metalness: 0.6, emissive: 0x0e1a2e, emissiveIntensity: 0.5 }));
+const matCache = track(new THREE.MeshStandardMaterial({ color: 0x3d5077, roughness: 0.5, metalness: 0.4 }));
+const matGlass = track(new THREE.MeshPhysicalMaterial({ color: 0x1c2940, roughness: 0.15, metalness: 0, transmission: 0.65, transparent: true, opacity: 0.35, thickness: 0.6 }));
+const matSyscallPlane = track(new THREE.MeshPhysicalMaterial({ color: 0x1a2b3d, roughness: 0.05, metalness: 0, transmission: 0.85, transparent: true, opacity: 0.28, side: THREE.DoubleSide }));
+
+function addFloorPlane(group, y, size, color = 0x18202f) {
+  const geo = track(new THREE.PlaneGeometry(size, size));
+  const mesh = new THREE.Mesh(geo, matFloor);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = y;
+  group.add(mesh);
+  const grid = new THREE.GridHelper(size, 20, 0x223047, 0x131a26);
+  grid.position.y = y + 0.01;
+  group.add(grid);
+  return mesh;
+}
+addFloorPlane(layerGroups.hardware, FLOOR.hardware, 34);
+addFloorPlane(layerGroups.kernel, FLOOR.kernel, 30, 0x1a2333);
+
+function makeLabel(text, cls = '') {
+  const div = document.createElement('div');
+  div.className = 'css2d-label ' + cls;
+  div.textContent = text;
+  return new CSS2DObject(div);
+}
+function floorLabel(text, y, floorKey, x = -FLOOR_HALF + 1, z = -FLOOR_HALF + 1) {
+  const l = makeLabel(text, 'floor-label');
+  l.position.set(x, y + 0.4, z);
+  return addFloorLabel(l, floorKey);
+}
+floorLabel('Floor 1 — Hardware', FLOOR.hardware, 'hardware');
+floorLabel('Floor 2 — Kernel', FLOOR.kernel, 'kernel');
+floorLabel('Floor 3 — Syscall Boundary', FLOOR.syscall, 'syscall');
+floorLabel('Floor 4 — User Space', FLOOR.userspace, 'userspace');
+
+// Clickable-object registry for the inspector: object3D.uuid -> descriptor fn
+const pickables = new Map();
+function registerPickable(mesh, describe) { pickables.set(mesh.uuid, describe); mesh.userData.pickable = true; }
+
+// ---------------------------------------------------------------------------
+// FLOOR 1 — hardware: CPU package (4 core dies + shared L3), DIMM grid as one
+// InstancedMesh of 8,192 frame cells, NVMe, NIC, PCIe lanes.
+// ---------------------------------------------------------------------------
+const RAM_FRAMES = isMobile ? 2048 : 8192;   // degrade instance count on mobile
+const RAM_COLS = isMobile ? 64 : 128;
+const RAM_ROWS = RAM_FRAMES / RAM_COLS;
+const ramGeo = track(new THREE.BoxGeometry(0.2, 0.2, 0.2));
+const ramMat = track(new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.35, vertexColors: true, emissive: 0x0a0e18, emissiveIntensity: 0.25 }));
+const ramMesh = new THREE.InstancedMesh(ramGeo, ramMat, RAM_FRAMES);
+ramMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(RAM_FRAMES * 3), 3);
+{
+  const dummy = new THREE.Object3D();
+  const spacing = 0.24;
+  const originX = -(RAM_COLS * spacing) / 2, originZ = -(RAM_ROWS * spacing) / 2;
+  for (let i = 0; i < RAM_FRAMES; i++) {
+    const col = i % RAM_COLS, row = Math.floor(i / RAM_COLS);
+    dummy.position.set(originX + col * spacing, FLOOR.hardware + 0.6, originZ + row * spacing);
+    dummy.updateMatrix();
+    ramMesh.setMatrixAt(i, dummy.matrix);
+    ramMesh.setColorAt(i, new THREE.Color(COLOR.free));
+  }
+}
+ramMesh.position.set(-9, 0, 6);
+ramMesh.instanceMatrix.needsUpdate = true;
+registerPickable(ramMesh, () => null); // per-instance handled specially in raycast (see main.js)
+layerGroups.hardware.add(ramMesh);
+{
+  const l = makeLabel('DIMM banks (' + RAM_FRAMES.toLocaleString() + ' × 4KB frames)', 'dim');
+  l.position.set(-9, FLOOR.hardware + 1.4, 6);
+  addFloorLabel(l, 'hardware');
+}
+
+// CPU package
+const cpuGroup = new THREE.Group();
+cpuGroup.position.set(6, 0, -4);
+layerGroups.hardware.add(cpuGroup);
+const coreDies = [];
+const STAGE_NAMES = ['fetch', 'decode', 'execute', 'memory', 'writeback'];
+for (let i = 0; i < 4; i++) {
+  const cx = (i % 2) * 3.4 - 1.7, cz = Math.floor(i / 2) * 3.4 - 1.7;
+  const g = new THREE.Group();
+  g.position.set(cx, FLOOR.hardware + 0.6, cz);
+  const dieGeo = track(new THREE.BoxGeometry(2.6, 0.5, 2.6));
+  const die = new THREE.Mesh(dieGeo, matDie.clone());
+  track(die.material);
+  g.add(die);
+  registerPickable(die, () => ({ kind: 'core', coreId: i }));
+  // 5 pipeline-stage lamps
+  const stageMeshes = [];
+  const stageGeo = track(new THREE.BoxGeometry(0.38, 0.14, 0.38));
+  for (let s = 0; s < 5; s++) {
+    const m = new THREE.Mesh(stageGeo, track(new THREE.MeshStandardMaterial({ color: 0x2a3550, emissive: 0x000000, roughness: 0.4 })));
+    m.position.set(-1.0 + s * 0.5, 0.33, 0);
+    g.add(m);
+    stageMeshes.push(m);
+  }
+  // ring indicator (ring0/ring3)
+  const ringGeo = track(new THREE.TorusGeometry(0.28, 0.045, 8, 20));
+  const ringMesh = new THREE.Mesh(ringGeo, track(new THREE.MeshStandardMaterial({ color: COLOR.user, emissive: COLOR.user, emissiveIntensity: 0.6 })));
+  ringMesh.rotation.x = Math.PI / 2;
+  ringMesh.position.set(1.1, 0.3, 0);
+  g.add(ringMesh);
+  const lbl = makeLabel('core ' + i);
+  lbl.position.set(0, 0.6, 1.5);
+  g.add(lbl);
+  cpuGroup.add(g);
+  coreDies.push({ group: g, die, stageMeshes, ringMesh, anchor: g });
+}
+function worldPos(obj3d, out) { out = out || new THREE.Vector3(); obj3d.updateWorldMatrix(true, false); return obj3d.getWorldPosition(out); }
+// Per-core L1/L2 slabs + shared L3
+const cacheSlabs = { l1d: [], l1i: [], l2: [] };
+for (let i = 0; i < 4; i++) {
+  const cx = (i % 2) * 3.4 - 1.7, cz = Math.floor(i / 2) * 3.4 - 1.7;
+  ['l1i', 'l1d', 'l2'].forEach((kind, k) => {
+    const geo = track(new THREE.BoxGeometry(0.5, 0.12, kind === 'l2' ? 1.6 : 0.9));
+    const mesh = new THREE.Mesh(geo, matCache.clone()); track(mesh.material);
+    mesh.position.set(cx + (k - 1) * 0.6, FLOOR.hardware + 0.35, cz + 1.7); // local to cpuGroup
+    cpuGroup.add(mesh);
+    registerPickable(mesh, () => ({ kind: 'cache', coreId: i, which: kind }));
+    cacheSlabs[kind].push(mesh);
+  });
+}
+const l3Geo = track(new THREE.BoxGeometry(3.2, 0.3, 1.0));
+const l3Mesh = new THREE.Mesh(l3Geo, matCache.clone()); track(l3Mesh.material);
+l3Mesh.position.set(0, FLOOR.hardware + 0.35, -0.2);
+cpuGroup.add(l3Mesh);
+registerPickable(l3Mesh, () => ({ kind: 'cache', coreId: null, which: 'l3' }));
+{ const l = makeLabel('L3 (shared)', 'dim'); l.position.set(0, 0.5, -0.2); cpuGroup.add(l); }
+
+// NVMe + NIC + PCIe lanes
+function boxAt(x, y, z, w, h, d, color) {
+  const geo = track(new THREE.BoxGeometry(w, h, d));
+  const mesh = new THREE.Mesh(geo, track(new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.5, emissive: 0x000000 })));
+  mesh.position.set(x, y, z);
+  layerGroups.hardware.add(mesh);
+  return mesh;
+}
+const nvmeMesh = boxAt(11, FLOOR.hardware + 0.4, -8, 2.2, 0.5, 1.2, 0x2a3550);
+registerPickable(nvmeMesh, () => ({ kind: 'nvme' }));
+{ const l = makeLabel('NVMe SSD', 'dim'); l.position.set(11, FLOOR.hardware + 0.75, -8); addFloorLabel(l, 'hardware'); }
+const nicMesh = boxAt(11, FLOOR.hardware + 0.4, 10, 2.2, 0.5, 1.2, 0x2a3550);
+registerPickable(nicMesh, () => ({ kind: 'nic' }));
+{ const l = makeLabel('NIC', 'dim'); l.position.set(11, FLOOR.hardware + 0.75, 10); addFloorLabel(l, 'hardware'); }
+
+const laneMat = track(new THREE.LineBasicMaterial({ color: 0x2a3550, transparent: true, opacity: 0.5 }));
+function pcieLane(a, b) {
+  const geo = track(new THREE.BufferGeometry().setFromPoints([a, b]));
+  const line = new THREE.Line(geo, laneMat.clone()); track(line.material);
+  layerGroups.hardware.add(line);
+  return line;
+}
+const laneCpuRam = pcieLane(new THREE.Vector3(6, FLOOR.hardware + 0.4, -4), new THREE.Vector3(-9, FLOOR.hardware + 0.6, 6));
+const laneCpuNvme = pcieLane(new THREE.Vector3(6, FLOOR.hardware + 0.4, -4), new THREE.Vector3(11, FLOOR.hardware + 0.4, -8));
+const laneCpuNic = pcieLane(new THREE.Vector3(6, FLOOR.hardware + 0.4, -4), new THREE.Vector3(11, FLOOR.hardware + 0.4, 10));
+
+// ---------------------------------------------------------------------------
+// FLOOR 2 — kernel: scheduler run queues, VM (page-table walk) indicator,
+// IRQ lamps, and a small VFS/net readout board.
+// ---------------------------------------------------------------------------
+const kernelGroup = new THREE.Group();
+kernelGroup.position.set(0, 0, 0);
+layerGroups.kernel.add(kernelGroup);
+
+const RUNQ_SLOTS = 10;
+const runQueueSlots = []; // [coreId][slotIdx] -> mesh
+{
+  const slotGeo = track(new THREE.BoxGeometry(0.55, 0.3, 0.55));
+  for (let c = 0; c < 4; c++) {
+    const lane = [];
+    const z = -10 + c * 2.4;
+    const lbl = makeLabel('run queue · core ' + c, 'dim');
+    lbl.position.set(-9.6, FLOOR.kernel + 0.5, z);
+    addFloorLabel(lbl, 'kernel');
+    for (let s = 0; s < RUNQ_SLOTS; s++) {
+      const m = new THREE.Mesh(slotGeo, track(new THREE.MeshStandardMaterial({ color: 0x1a2233, roughness: 0.6 })));
+      m.position.set(-8 + s * 0.72, FLOOR.kernel + 0.4, z);
+      kernelGroup.add(m);
+      registerPickable(m, () => ({ kind: 'runqueue-slot', core: c, slot: s }));
+      lane.push(m);
+    }
+    runQueueSlots.push(lane);
+  }
+  const board = boxAt(-8 + (RUNQ_SLOTS - 1) * 0.36, FLOOR.kernel + 0.05, -10 + 1.2, RUNQ_SLOTS * 0.72 + 0.6, 0.06, 8.4, 0x0d1420);
+  board.material.transparent = true; board.material.opacity = 0.5;
+}
+{ const l = makeLabel('Scheduler', 'floor-label'); l.position.set(-8, FLOOR.kernel + 1.1, -12); addFloorLabel(l, 'kernel'); }
+
+// VM district: a small instanced grid standing in for the active page-table
+// walk (PML4→PDPT→PD→PT) — 4 columns (one per level) that flash on access.
+const vmGroup = new THREE.Group();
+vmGroup.position.set(2, FLOOR.kernel, 6);
+kernelGroup.add(vmGroup);
+const ptLevels = ['PML4', 'PDPT', 'PD', 'PT'];
+const ptMeshes = [];
+ptLevels.forEach((lvl, li) => {
+  const geo = track(new THREE.BoxGeometry(0.5, 0.5, 0.5));
+  const m = new THREE.Mesh(geo, track(new THREE.MeshStandardMaterial({ color: COLOR.kernelMem, roughness: 0.5, emissive: 0x000000 })));
+  m.position.set(li * 1.1, 0.5, 0);
+  vmGroup.add(m);
+  registerPickable(m, () => ({ kind: 'pagetable-level', level: lvl }));
+  const l = makeLabel(lvl, 'dim'); l.position.set(li * 1.1, 0.95, 0); vmGroup.add(l);
+  ptMeshes.push(m);
+});
+const tlbGeo = track(new THREE.BoxGeometry(2.4, 0.35, 0.9));
+const tlbMesh = new THREE.Mesh(tlbGeo, track(new THREE.MeshStandardMaterial({ color: 0x2a3550, roughness: 0.5 })));
+tlbMesh.position.set(1.65, -0.4, 0);
+vmGroup.add(tlbMesh);
+registerPickable(tlbMesh, () => ({ kind: 'tlb' }));
+{ const l = makeLabel('TLB (64 entries)', 'dim'); l.position.set(1.65, -0.15, 0); vmGroup.add(l); }
+{ const l = makeLabel('Virtual Memory', 'floor-label'); l.position.set(2, FLOOR.kernel + 1.4, 4.6); addFloorLabel(l, 'kernel'); }
+
+// IRQ lamps
+const irqGroup = new THREE.Group();
+irqGroup.position.set(9, FLOOR.kernel, -10);
+kernelGroup.add(irqGroup);
+const IRQ_LINES = ['timer', 'nvme', 'net', 'other'];
+const irqLamps = {};
+IRQ_LINES.forEach((name, i) => {
+  const geo = track(new THREE.SphereGeometry(0.22, 12, 12));
+  const m = new THREE.Mesh(geo, track(new THREE.MeshStandardMaterial({ color: 0x3a1414, emissive: 0x000000, roughness: 0.4 })));
+  m.position.set(0, 0.3, i * 0.7);
+  irqGroup.add(m);
+  registerPickable(m, () => ({ kind: 'irq-line', line: name }));
+  const l = makeLabel(name, 'dim'); l.position.set(0.5, 0.3, i * 0.7); irqGroup.add(l);
+  irqLamps[name] = m;
+});
+{ const l = makeLabel('Interrupt Controller', 'floor-label'); l.position.set(9, FLOOR.kernel + 1.1, -10.8); addFloorLabel(l, 'kernel'); }
+
+// VFS / block + net readout board (mostly CSS2D-driven, cheap)
+const vfsAnchor = new THREE.Group();
+vfsAnchor.position.set(9, FLOOR.kernel + 0.5, 3);
+kernelGroup.add(vfsAnchor);
+const nvmeQueueGeo = track(new THREE.BoxGeometry(1.6, 0.3, 0.5));
+const nvmeQueueMesh = new THREE.Mesh(nvmeQueueGeo, track(new THREE.MeshStandardMaterial({ color: 0x2a3550 })));
+vfsAnchor.add(nvmeQueueMesh);
+registerPickable(nvmeQueueMesh, () => ({ kind: 'nvme-queue' }));
+{ const l = makeLabel('NVMe cmd queue', 'dim'); l.position.set(0, 0.4, 0); vfsAnchor.add(l); }
+{ const l = makeLabel('VFS / Block / Net', 'floor-label'); l.position.set(9, FLOOR.kernel + 1.1, 5); addFloorLabel(l, 'kernel'); }
+const socketListAnchor = new THREE.Group();
+socketListAnchor.position.set(9, FLOOR.kernel + 0.5, 5.6);
+kernelGroup.add(socketListAnchor);
+const socketDots = new Map(); // socket id -> mesh
+function socketDot(id) {
+  if (socketDots.has(id)) return socketDots.get(id);
+  const n = socketDots.size;
+  const geo = track(new THREE.SphereGeometry(0.14, 10, 10));
+  const m = new THREE.Mesh(geo, track(new THREE.MeshStandardMaterial({ color: 0x2a3550, emissive: 0x000000 })));
+  m.position.set((n % 8) * 0.32, 0, Math.floor(n / 8) * 0.32);
+  socketListAnchor.add(m);
+  registerPickable(m, () => ({ kind: 'socket', socketId: id }));
+  socketDots.set(id, m);
+  return m;
+}
+
+// ---------------------------------------------------------------------------
+// FLOOR 3 — the syscall boundary: one glass plane spanning the whole scene.
+// Every syscall must pass through the gate; nothing crosses any other way.
+// ---------------------------------------------------------------------------
+const syscallPlaneMesh = new THREE.Mesh(track(new THREE.PlaneGeometry(FLOOR_HALF * 2, FLOOR_HALF * 2)), matSyscallPlane);
+syscallPlaneMesh.rotation.x = -Math.PI / 2;
+syscallPlaneMesh.position.y = FLOOR.syscall;
+layerGroups.syscall.add(syscallPlaneMesh);
+const gateGeo = track(new THREE.CylinderGeometry(0.9, 0.9, 0.15, 32));
+const gateMat = track(new THREE.MeshStandardMaterial({ color: 0x3a4560, emissive: 0x000000, roughness: 0.3, metalness: 0.6 }));
+const gateMesh = new THREE.Mesh(gateGeo, gateMat);
+gateMesh.position.set(0, FLOOR.syscall, 0);
+layerGroups.syscall.add(gateMesh);
+registerPickable(gateMesh, () => ({ kind: 'syscall-gate' }));
+{ const l = makeLabel('syscall gate', 'dim'); l.position.set(0, FLOOR.syscall + 0.4, 0); addFloorLabel(l, 'syscall'); }
+
+// ---------------------------------------------------------------------------
+// FLOOR 4 — user space: processes as translucent glass volumes, built
+// dynamically as the kernel creates them (see wireEvents' PROCESS_CREATED).
+// ---------------------------------------------------------------------------
+const userGroup = new THREE.Group();
+layerGroups.userspace.add(userGroup);
+const processBoxes = new Map(); // procId -> {group, dotsGroup, dots: Map(pid/gid -> mesh), label, anchor}
+const PROC_SLOT_POSITIONS = [[-9, -6], [-9, 4], [3, -6], [3, 4], [-9, -1], [3, -1]];
+let procSlotCursor = 0;
+function buildProcessBox(procId, name) {
+  if (processBoxes.has(procId)) return processBoxes.get(procId);
+  const [sx, sz] = PROC_SLOT_POSITIONS[procSlotCursor++ % PROC_SLOT_POSITIONS.length];
+  const group = new THREE.Group();
+  group.position.set(sx, FLOOR.userspace, sz);
+  userGroup.add(group);
+  const glass = new THREE.Mesh(track(new THREE.BoxGeometry(5, 4.4, 5)), matGlass.clone());
+  track(glass.material);
+  glass.position.y = 2.2;
+  glass.material.color = procColor(name).clone().lerp(new THREE.Color(0x1c2940), 0.5);
+  group.add(glass);
+  registerPickable(glass, () => ({ kind: 'process', procId }));
+  const label = makeLabel(name); label.position.set(0, 4.7, 0); group.add(label);
+  ['.text', 'heap', 'stack'].forEach((tag, i) => {
+    const slab = new THREE.Mesh(track(new THREE.BoxGeometry(3.6, 0.35, 0.5)), track(new THREE.MeshStandardMaterial({ color: 0x2a3550, transparent: true, opacity: 0.8 })));
+    slab.position.set(0, 0.8 + i * 1.1, -1.6 + i * 0.1);
+    group.add(slab);
+    const l = makeLabel(tag, 'dim'); l.position.set(-1.9, 0.8 + i * 1.1 + 0.3, -1.6 + i * 0.1); group.add(l);
+  });
+  const dotsGroup = new THREE.Group();
+  dotsGroup.position.set(-1.6, 3.4, 1.4);
+  group.add(dotsGroup);
+  const entry = { group, glass, dotsGroup, dots: new Map(), name };
+  processBoxes.set(procId, entry);
+  return entry;
+}
+function taskDot(procId, taskId, label) {
+  const box = processBoxes.get(procId);
+  if (!box) return null;
+  if (box.dots.has(taskId)) return box.dots.get(taskId);
+  const n = box.dots.size;
+  const geo = track(new THREE.SphereGeometry(0.16, 10, 10));
+  const m = new THREE.Mesh(geo, track(new THREE.MeshStandardMaterial({ color: COLOR.user, emissive: 0x000000 })));
+  m.position.set((n % 6) * 0.42, Math.floor(n / 6) * -0.42, 0);
+  box.dotsGroup.add(m);
+  registerPickable(m, () => ({ kind: 'task', taskId, label }));
+  box.dots.set(taskId, m);
+  return m;
+}
+
+const RendererCore = {
+  scene, camera, renderer, composer, labelRenderer, orbit, layerGroups,
+  FLOOR, FLOOR_HALF, COLOR, procColor, track, disposables, makeLabel,
+  get cameraMode() { return cameraMode; }, setCameraMode, fly, updateFreefly,
+  applyExplode, setExplode(v) { explodeFactor = v; applyExplode(); },
+  isMobile, REDUCED_MOTION, pickables, registerPickable,
+  ramMesh, RAM_FRAMES, RAM_COLS, coreDies, cacheSlabs, l3Mesh, nvmeMesh, nicMesh,
+  laneCpuRam, laneCpuNvme, laneCpuNic, STAGE_NAMES, worldPos,
+  runQueueSlots, RUNQ_SLOTS, ptMeshes, ptLevels, tlbMesh, irqLamps, gateMesh, syscallPlaneMesh,
+  nvmeQueueMesh, socketListAnchor, processBoxes, buildProcessBox, taskDot,
+};
+
+// ---------------------------------------------------------------------------
+// Token / particle system — data in motion. A small pooled set of emissive
+// spheres, each animated from a start to an end position over a duration.
+// Color encodes the nature of the data per the brief: amber = user mode,
+// cyan = kernel mode, red = hardware interrupt, green = data.
+// ---------------------------------------------------------------------------
+const TOKEN_POOL_SIZE = isMobile ? 24 : 64;
+const tokenGeo = track(new THREE.SphereGeometry(0.14, 10, 10));
+const tokenPool = [];
+for (let i = 0; i < TOKEN_POOL_SIZE; i++) {
+  const mat = track(new THREE.MeshBasicMaterial({ color: COLOR.data, transparent: true, opacity: 0.95 }));
+  const mesh = new THREE.Mesh(tokenGeo, mat);
+  mesh.visible = false;
+  layerGroups.particles.add(mesh);
+  tokenPool.push({ mesh, active: false, t0: 0, dur: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), onArrive: null, followable: true });
+}
+let tokenCursor = 0;
+let followTarget = null; // {token} or null
+function resolveAnchor(a) {
+  if (a instanceof THREE.Vector3) return a.clone();
+  if (a && a.isObject3D) return worldPos(a);
+  return new THREE.Vector3();
+}
+function spawnToken(from, to, color, durMs = 500, onArrive = null) {
+  if (RendererCore.REDUCED_MOTION) durMs = Math.min(durMs, 120);
+  const slot = tokenPool[tokenCursor]; tokenCursor = (tokenCursor + 1) % tokenPool.length;
+  slot.active = true; slot.t0 = performance.now(); slot.dur = durMs;
+  slot.from = resolveAnchor(from); slot.to = resolveAnchor(to);
+  slot.onArrive = onArrive;
+  slot.mesh.visible = true;
+  slot.mesh.material.color.setHex(color);
+  slot.mesh.position.copy(slot.from);
+  return slot;
+}
+function updateTokens(nowMs) {
+  for (const slot of tokenPool) {
+    if (!slot.active) continue;
+    const t = (nowMs - slot.t0) / slot.dur;
+    if (t >= 1) {
+      slot.mesh.position.copy(slot.to);
+      slot.active = false; slot.mesh.visible = false;
+      if (slot.onArrive) { const cb = slot.onArrive; slot.onArrive = null; cb(); }
+      if (followTarget === slot) followTarget = null;
+      continue;
+    }
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out
+    slot.mesh.position.lerpVectors(slot.from, slot.to, Math.max(0, Math.min(1, e)));
+    slot.mesh.position.y += Math.sin(e * Math.PI) * 0.6; // gentle arc
+  }
+}
+function latestActiveToken() {
+  let best = null;
+  for (const slot of tokenPool) if (slot.active) best = slot;
+  return best;
+}
+
+// ---------------------------------------------------------------------------
+// Transient flash helper — sets emissiveIntensity high, decays over time.
+// Used for cache lines, IRQ lamps, the syscall gate, ring indicators, etc.
+// ---------------------------------------------------------------------------
+const flashers = new Set(); // {material, color, until, peak}
+function flash(mesh, colorHex, ms = 400, peak = 1.4) {
+  const mat = mesh.material;
+  mat.emissive.setHex(colorHex);
+  mat.emissiveIntensity = peak;
+  flashers.add({ mat, until: performance.now() + ms, start: performance.now(), ms, peak });
+}
+function updateFlashers(nowMs) {
+  for (const f of flashers) {
+    if (nowMs >= f.until) { f.mat.emissiveIntensity = 0; flashers.delete(f); continue; }
+    const t = (nowMs - f.start) / f.ms;
+    f.mat.emissiveIntensity = f.peak * (1 - t);
+  }
+}
+
+Object.assign(RendererCore, {
+  spawnToken, updateTokens, resolveAnchor, latestActiveToken,
+  flash, updateFlashers, get followTarget() { return followTarget; }, setFollowTarget(v) { followTarget = v; },
+});
+
+// ---------------------------------------------------------------------------
+// State sync — continuous visuals (RAM ownership, pipeline occupancy, run
+// queues, cache hit rate, task dots) are read straight from the live,
+// fully-inspectable Machine every frame, rather than reconstructed from
+// events. Events (below) drive momentary effects — tokens, flashes,
+// narration — on top of this.
+// ---------------------------------------------------------------------------
+const _colorScratch = new THREE.Color();
+const _freeColor = new THREE.Color(COLOR.free);
+const _kernelColor = new THREE.Color(COLOR.kernelMem);
+function ownerColor(owner) {
+  if (owner === 'free') return _freeColor;
+  if (owner === 'kernel') return _kernelColor;
+  return procColor(owner);
+}
+let _ramSyncCounter = 0;
+function syncRam(machine) {
+  // Spread the 8,192-frame scan across a few frames so it never spikes a
+  // single frame's budget, while still settling within ~150ms of a change.
+  const N = RendererCore.RAM_FRAMES;
+  const slice = 2048;
+  const start = (_ramSyncCounter * slice) % N;
+  _ramSyncCounter++;
+  let changed = false;
+  for (let k = 0; k < slice; k++) {
+    const i = (start + k) % N;
+    const owner = machine.mem.meta[i].owner;
+    const c = ownerColor(owner);
+    ramMesh.getColorAt(i, _colorScratch);
+    if (!_colorScratch.equals(c)) { ramMesh.setColorAt(i, c); changed = true; }
+  }
+  if (changed) ramMesh.instanceColor.needsUpdate = true;
+}
+function syncCores(machine) {
+  machine.cores.forEach((core, i) => {
+    const d = coreDies[i];
+    RendererCore.STAGE_NAMES.forEach((stage, si) => {
+      const lit = !!core.stages[stage];
+      const mat = d.stageMeshes[si].material;
+      const target = lit ? (core.ring === 0 ? COLOR.kernel : COLOR.user) : 0x2a3550;
+      mat.emissive.setHex(lit ? target : 0x000000);
+      mat.emissiveIntensity = lit ? 0.9 : 0;
+      mat.color.setHex(target);
+    });
+    const ringColor = core.ring === 0 ? COLOR.kernel : COLOR.user;
+    d.ringMesh.material.color.setHex(ringColor);
+    d.ringMesh.material.emissive.setHex(ringColor);
+    d.ringMesh.material.emissiveIntensity = core.halted ? 0.15 : 0.55;
+    d.die.material.emissiveIntensity = core.halted ? 0.15 : (core.stallCycles > 0 ? 0.75 : 0.4);
+  });
+  ['l1i', 'l1d', 'l2'].forEach((kind) => {
+    machine.cores.forEach((core, i) => {
+      const hr = core[kind].hitRate;
+      cacheSlabs[kind][i].material.color.copy(new THREE.Color(0xff5b5b)).lerp(new THREE.Color(0x4dff9e), hr);
+    });
+  });
+  l3Mesh.material.color.copy(new THREE.Color(0xff5b5b)).lerp(new THREE.Color(0x4dff9e), machine.l3.hitRate);
+}
+function syncRunQueues(machine) {
+  for (let c = 0; c < 4; c++) {
+    const q = machine.kernel.runQueues[c];
+    for (let s = 0; s < RendererCore.RUNQ_SLOTS; s++) {
+      const mesh = runQueueSlots[c][s];
+      const task = q[s];
+      if (task) { mesh.material.color.copy(procColor(task.proc.name)); mesh.material.emissive.copy(procColor(task.proc.name)); mesh.material.emissiveIntensity = 0.35; }
+      else { mesh.material.color.setHex(0x1a2233); mesh.material.emissiveIntensity = 0; }
+    }
+    const running = machine.cores[c].task;
+    // A slim halo pulse on the core whose current task is this lane's owner
+    void running;
+  }
+}
+function taskState(machine, taskId) { const t = machine.kernel.tasks.get(taskId); return t ? t.state : null; }
+function syncTaskDots(machine) {
+  for (const [, box] of processBoxes) {
+    for (const [taskId, mesh] of box.dots) {
+      const st = taskState(machine, taskId);
+      let color = 0x555b6e, intensity = 0.15;
+      if (st === 'RUNNING') { color = COLOR.data; intensity = 0.9; }
+      else if (st === 'RUNNABLE') { color = COLOR.user; intensity = 0.5; }
+      else if (st === 'SLEEPING') { color = 0x555b6e; intensity = 0.15; }
+      mesh.material.color.setHex(color); mesh.material.emissive.setHex(color); mesh.material.emissiveIntensity = intensity;
+    }
+  }
+}
+function syncAll(machine) {
+  syncRam(machine);
+  syncCores(machine);
+  syncRunQueues(machine);
+  syncTaskDots(machine);
+}
+Object.assign(RendererCore, { syncAll });
+
+// ---------------------------------------------------------------------------
+// Event wiring — momentary effects. Returns an unsubscribe function so the
+// caller can tear this down cleanly when a new scenario/Machine is loaded.
+// ---------------------------------------------------------------------------
+function coreAnchor(i) { return coreDies[i] ? coreDies[i].group : ramMesh; }
+function procIdForPid(machine, pid) { const t = machine.kernel.tasks.get(pid); return t ? t.proc.id : null; }
+function processAnchor(machine, pid) {
+  const procId = procIdForPid(machine, pid);
+  const box = procId != null ? processBoxes.get(procId) : null;
+  return box ? box.glass : gateMesh;
+}
+
+function wireEvents(machine) {
+  const offs = [];
+  const on = (type, fn) => offs.push(machine.bus.on(type, fn));
+
+  on('PROCESS_CREATED', (e) => { buildProcessBox(e.id, e.name); });
+  on('TASK_CREATED', (e) => {
+    const box = buildProcessBox(e.procId, e.proc);
+    taskDot(e.procId, e.pid, 'task ' + e.pid);
+    void box;
+  });
+  on('THREAD_CLONE', (e) => {
+    const procId = procIdForPid(machine, e.parent);
+    if (procId == null) return;
+    buildProcessBox(procId, e.proc);
+    const parentDot = taskDot(procId, e.parent, 'task ' + e.parent);
+    const childDot = taskDot(procId, e.child, 'task ' + e.child);
+    spawnToken(parentDot, childDot, COLOR.data, 350);
+  });
+
+  on('SYSCALL_ENTER', (e) => {
+    if (e.trap) return; // page faults are handled via PAGE_FAULT below
+    flash(gateMesh, COLOR.user, 500, 1.6);
+    const from = processAnchor(machine, e.pid);
+    spawnToken(from, gateMesh, COLOR.user, 260, () => {
+      flash(gateMesh, COLOR.kernel, 400, 1.6);
+      spawnToken(gateMesh, coreAnchor(e.core), COLOR.kernel, 260);
+    });
+  });
+  on('SYSCALL_EXIT', (e) => {
+    spawnToken(coreAnchor(e.core), gateMesh, COLOR.kernel, 220, () => {
+      spawnToken(gateMesh, processAnchor(machine, e.pid), COLOR.user, 220);
+    });
+  });
+
+  on('TLB_MISS', (e) => { flash(tlbMesh, COLOR.user, 300); spawnToken(coreAnchor(e.core ?? 0), tlbMesh, COLOR.user, 220); });
+  on('TLB_HIT', () => { flash(tlbMesh, COLOR.data, 150, 0.8); });
+  on('PAGE_FAULT', (e) => {
+    let delay = 0;
+    ptMeshes.forEach((m) => { setTimeout(() => flash(m, COLOR.irq, 260, 1.6), delay); delay += 90; });
+    spawnToken(coreAnchor(e.core ?? 0), vmGroup, COLOR.irq, 300);
+  });
+  on('PAGE_FAULT_RESOLVED', (e) => { spawnToken(vmGroup, coreAnchor(e.core ?? 0), COLOR.data, 300); });
+  on('TLB_FLUSH', () => { flash(tlbMesh, COLOR.irq, 350, 1.3); });
+
+  on('CONTEXT_SWITCH', (e) => {
+    const d = coreDies[e.core]; if (d) flash(d.die, COLOR.kernel, 300, 1.2);
+    if (e.flushedTLB) flash(tlbMesh, COLOR.irq, 300, 1.1);
+  });
+
+  on('IRQ_RAISED', (e) => {
+    const lamp = irqLamps[e.line] || irqLamps.other;
+    flash(lamp, COLOR.irq, 350, 1.8);
+    if (e.meta && e.meta.core != null) spawnToken(lamp, coreAnchor(e.meta.core), COLOR.irq, 260);
+    else if (e.line === 'timer') machine.cores.forEach((_, i) => spawnToken(lamp, coreAnchor(i), COLOR.irq, 260));
+  });
+  on('DMA_WRITE', () => { spawnToken(nvmeMesh, ramMesh, COLOR.data, 420); flash(nvmeMesh, COLOR.data, 400); });
+  on('NVME_SUBMIT', () => { flash(nvmeQueueMesh, COLOR.kernel, 300); });
+
+  on('PACKET_SENT', (e) => {
+    flash(nicMesh, COLOR.data, 250);
+    spawnToken(nicMesh, socketDot(e.pkt.to), COLOR.data, 300);
+  });
+  on('SOCKET_RECV', (e) => { const dot = socketDot(e.sock); spawnToken(nicMesh, dot, COLOR.data, 260); flash(dot, COLOR.data, 300, 1.3); });
+  on('SOCKET_STATE', (e) => { const dot = socketDot(e.sock); flash(dot, e.state === 'ESTABLISHED' ? COLOR.data : COLOR.kernel, 300, 1.0); });
+
+  return () => offs.forEach((off) => off());
+}
+Object.assign(RendererCore, { wireEvents, vmGroup, kernelGroup, userGroup, socketDot });
+
+// ---------------------------------------------------------------------------
+// Picking — raycast against every registered pickable, with special-cased
+// per-instance resolution for the RAM InstancedMesh (8,192 separate "objects"
+// sharing one draw call).
+// ---------------------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+function pick(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointerNdc, camera);
+  const targets = [...pickables.keys()].map((id) => scene.getObjectByProperty('uuid', id)).filter(Boolean);
+  const hits = raycaster.intersectObjects(targets, false);
+  if (!hits.length) return null;
+  const hit = hits[0];
+  if (hit.object === ramMesh && hit.instanceId != null) return { kind: 'ram-frame', frame: hit.instanceId, point: hit.point };
+  const describe = pickables.get(hit.object.uuid);
+  return describe ? describe() : null;
+}
+Object.assign(RendererCore, { pick });
+
+// ---------------------------------------------------------------------------
+// Snapshot rendering — for the rewind scrubber. Restores what the lightweight
+// per-tick snapshot actually carries (RAM ownership exactly, per-core
+// register/stage/ring state, and enough of the task list to recolor run
+// queues by owning process) without replaying the token animations that led
+// there. See the final report for why: full visual replay would need either
+// a full deep-cloned state per tick (too much memory for a 32MB address
+// space) or re-running every event handler for the skipped window, both cut
+// for time — this still gives an accurate structural snapshot at any tick
+// inside the ring buffer, which is what the inspector and counters read.
+// ---------------------------------------------------------------------------
+function codeColor(code) {
+  if (code === 0) return _freeColor;
+  if (code === 1) return _kernelColor;
+  return new THREE.Color().setHSL(((code * 47) % 360) / 360, 0.55, 0.55);
+}
+function renderSnapshot(snap) {
+  const N = Math.min(RendererCore.RAM_FRAMES, snap.owners.length);
+  for (let i = 0; i < N; i++) ramMesh.setColorAt(i, codeColor(snap.owners[i]));
+  ramMesh.instanceColor.needsUpdate = true;
+
+  const pidToProc = new Map(snap.tasks.map((t) => [t.pid, t.proc]));
+  snap.cores.forEach((c, i) => {
+    const d = coreDies[i];
+    RendererCore.STAGE_NAMES.forEach((stage, si) => {
+      const lit = !!c.stages[stage];
+      const mat = d.stageMeshes[si].material;
+      const target = lit ? (c.ring === 0 ? COLOR.kernel : COLOR.user) : 0x2a3550;
+      mat.color.setHex(target); mat.emissive.setHex(lit ? target : 0x000000); mat.emissiveIntensity = lit ? 0.9 : 0;
+    });
+    const ringColor = c.ring === 0 ? COLOR.kernel : COLOR.user;
+    d.ringMesh.material.color.setHex(ringColor); d.ringMesh.material.emissive.setHex(ringColor);
+    d.ringMesh.material.emissiveIntensity = c.halted ? 0.15 : 0.55;
+    const proc = pidToProc.get(c.taskPid);
+    if (proc) d.die.material.color.copy(procColor(proc)).lerp(new THREE.Color(0x1a2436), 0.6);
+  });
+  for (let cIdx = 0; cIdx < 4; cIdx++) {
+    const n = snap.runQueueLens[cIdx] || 0;
+    for (let s = 0; s < RendererCore.RUNQ_SLOTS; s++) {
+      const mesh = runQueueSlots[cIdx][s];
+      if (s < n) { mesh.material.color.setHex(0x557); mesh.material.emissiveIntensity = 0.25; }
+      else { mesh.material.color.setHex(0x1a2233); mesh.material.emissiveIntensity = 0; }
+    }
+  }
+}
+Object.assign(RendererCore, { renderSnapshot });
+
+// ---------------------------------------------------------------------------
+// Teardown between scenarios — dispose the dynamic per-Machine objects
+// (process boxes, task dots, socket dots) so switching scenarios never
+// leaks geometry/materials or shows stale processes from the last run.
+// ---------------------------------------------------------------------------
+function disposeObject3D(obj) {
+  obj.traverse((child) => {
+    if (child.geometry && !disposables.includes(child.geometry)) child.geometry.dispose();
+    if (child.material && !disposables.includes(child.material)) {
+      (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => m.dispose());
+    }
+  });
+}
+function resetDynamicScene() {
+  for (const [, box] of processBoxes) { userGroup.remove(box.group); disposeObject3D(box.group); }
+  processBoxes.clear();
+  procSlotCursor = 0;
+  for (const [, mesh] of socketDots) { socketListAnchor.remove(mesh); }
+  socketDots.clear();
+  for (const slot of tokenPool) { slot.active = false; slot.mesh.visible = false; }
+  followTarget = null;
+}
+Object.assign(RendererCore, { resetDynamicScene });
+
+// ---------------------------------------------------------------------------
+// Resize
+// ---------------------------------------------------------------------------
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  labelRenderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+
+// ============================================================================
+// PART 3: APP — orchestration + UI. Owns the Machine lifecycle, the fixed-
+// timestep playback loop, and every DOM control. This is the only layer that
+// touches both SimCore and RendererCore.
+// ============================================================================
+const R = RendererCore;
+
+// ---------------------------------------------------------------------------
+// Scenario registry
+// ---------------------------------------------------------------------------
+const SCENARIOS = {
+  boot: {
+    title: 'Boot',
+    desc: 'Kernel init creates the first process and execve()s it — modelled with a real ELF page-in from the block device.',
+    steps: '1. kernel creates init  2. execve()  3. ring 3 entry',
+    seed: 101, ticks: 3000,
+    setup: (m) => Scenarios.boot(m),
+  },
+  hello: {
+    title: 'Hello, machine',
+    desc: 'x = 10; y = 20; z = x + y — three instructions through the real 5-stage pipeline, with real memory spills to the stack.',
+    steps: 'mov · add · mov — watch the pipeline stages light up on core 0',
+    seed: 7, ticks: 400,
+    setup: (m) => Scenarios.helloWorld(m),
+  },
+  pagefault: {
+    title: 'A page fault, start to finish',
+    desc: 'The process touches a heap page that was never mapped. Watch the trap to ring 0, the frame allocation, the PTE walk, and the retried instruction.',
+    steps: '#PF → allocate frame → zero it → install PTE → flush TLB entry → retry',
+    seed: 11, ticks: 400,
+    setup: (m) => Scenarios.pageFault(m),
+  },
+  ctxswitch: {
+    title: 'Context switch',
+    desc: 'Two processes share one core. Watch the run queue, the TLB flush on every switch, and the caches going cold for the incoming process.',
+    steps: 'save regs → swap CR3 → flush TLB → load regs',
+    seed: 3, ticks: 60000,
+    setup: (m) => Scenarios.contextSwitch(m),
+  },
+  cachehit: {
+    title: 'Cache: sequential access',
+    desc: 'A tight loop walks 256KB of heap sequentially — mostly cache hits after the first pass.',
+    steps: 'watch the L1/L2/L3 hit-rate bars in the counters panel',
+    seed: 21, ticks: 60000,
+    setup: (m) => Scenarios.cacheThrash(m, 'sequential'),
+  },
+  cachethrash: {
+    title: 'Cache: random access',
+    desc: 'The same loop, but scrambling the access order — far more cache misses, visibly redder cache slabs.',
+    steps: 'compare the hit rate against the sequential run',
+    seed: 21, ticks: 60000,
+    setup: (m) => Scenarios.cacheThrash(m, 'random'),
+  },
+  fsync: {
+    title: 'fsync()',
+    desc: 'A dirty page goes to the block queue, then the simulated NVMe device, then completes via a real interrupt.',
+    steps: 'openat → write → NVMe submit → DMA → IRQ → completion',
+    seed: 5, ticks: 5000,
+    setup: (m) => Scenarios.fsync(m),
+  },
+  http: {
+    title: 'A full HTTP request',
+    desc: 'NIC → IRQ → softirq → TCP handshake → socket → epoll → a cloned handler → a loopback DB query → response → NIC. Every hop is a real syscall.',
+    steps: 'SYN·SYN-ACK·ACK → accept4 → clone → epoll_wait → read → db → write',
+    seed: 9, ticks: 9000,
+    setup: (m) => Scenarios.httpRequest(m),
+  },
+  goroutines: {
+    title: '10,000 goroutines, 4 threads',
+    desc: 'Only the 4 M threads are real, kernel-scheduled task_structs. 10,000 goroutines are cheap logical objects the Go runtime multiplexes on top — watch how few are ever actually RUNNING at once.',
+    steps: 'G : M ratio ≈ 2500 : 1 — most goroutines sit WAITING on synthetic I/O',
+    seed: 5, ticks: 20000,
+    setup: (m) => Scenarios.manyGoroutines(m, 10000, 4),
+  },
+};
+const SCENARIO_ORDER = ['boot', 'hello', 'pagefault', 'ctxswitch', 'cachehit', 'cachethrash', 'fsync', 'http', 'goroutines'];
+
+// ---------------------------------------------------------------------------
+// Glossary — every term appears with what it does, the moment it appears.
+// ---------------------------------------------------------------------------
+const GLOSSARY = {
+  'context switch': 'the CPU stops running one thread and resumes another',
+  'page fault': 'the CPU tried to use a virtual address with no physical page behind it yet',
+  'TLB': 'a cache of recent virtual→physical address translations',
+  'TLB miss': 'the TLB had no cached translation, so the CPU must walk the page tables',
+  'syscall': 'a controlled jump from user code (ring 3) into the kernel (ring 0)',
+  'interrupt': 'hardware signalling the CPU asynchronously — it stops what it is doing to handle it',
+  'softirq': 'the deferred, slower half of interrupt handling, run shortly after the fast top half',
+  'goroutine': 'a lightweight, user-scheduled unit of work — many share one OS thread',
+  'epoll': 'a way for one thread to wait on many file descriptors at once, instead of blocking on just one',
+  'run queue': 'the list of threads a CPU core could run next',
+  'backlog': 'connections that finished the TCP handshake but haven’t been accept()ed yet',
+};
+function annotate(text) {
+  let out = text;
+  for (const term of Object.keys(GLOSSARY)) {
+    const re = new RegExp('\\b(' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\b', 'i');
+    if (re.test(out) && !out.includes('<span')) {
+      out = out.replace(re, `<span class="term" title="${GLOSSARY[term]}">$1</span>`);
+      break; // annotate one term per line so the sentence stays readable
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Machine lifecycle
+// ---------------------------------------------------------------------------
+let machine = null;
+let unwireEvents = null;
+let currentKey = 'hello';
+let lastEventForInspector = null;
+
+let unwireNarration = null;
+function loadScenario(key) {
+  const spec = SCENARIOS[key];
+  if (!spec) return;
+  currentKey = key;
+  if (unwireEvents) unwireEvents();
+  if (unwireNarration) unwireNarration();
+  R.resetDynamicScene();
+  machine = new Machine(spec.seed);
+  machine.paused = true;
+  machine.snapshotStride = SNAPSHOT_STRIDE[simState.mode] || 1;
+  spec.setup(machine);
+  unwireEvents = R.wireEvents(machine);
+  unwireNarration = wireNarration(machine);
+  simState.playing = false;
+  simState.carry = 0;
+  simState.totalTicksSim = 0;
+  updateTransportUI();
+  showBrief(spec);
+  setNarration('SCENARIO', `Loaded — ${spec.desc}`);
+  clearInspector();
+  R.syncAll(machine);
+  refreshScrubberRange();
+}
+
+function showBrief(spec) {
+  const el = document.getElementById('scenario-brief');
+  document.getElementById('brief-title').textContent = spec.title;
+  document.getElementById('brief-desc').innerHTML = annotate(spec.desc);
+  document.getElementById('brief-steps').textContent = spec.steps;
+  el.hidden = false;
+  clearTimeout(showBrief._t);
+  showBrief._t = setTimeout(() => { el.hidden = true; }, 6500);
+}
+
+// ---------------------------------------------------------------------------
+// Playback / time dilation
+// ---------------------------------------------------------------------------
+const REAL_HW_HZ = 1e9; // nominal 1 GHz — purely for the dilation-ratio readout
+const DILATION_HZ = { cycle: 2, '1000': 1e3, '1000000': 1e6, real: 1e9 };
+const MAX_TICKS_PER_FRAME = 4000; // keeps every dilation setting inside one frame's budget
+const simState = { playing: false, mode: 'cycle', carry: 0, totalTicksSim: 0 };
+
+function formatSimTime(ticks) {
+  const ns = ticks; // 1 simulated cycle ≈ 1 ns at the nominal 1GHz used for the readout
+  if (ns < 1000) return ns.toFixed(0) + ' ns';
+  if (ns < 1e6) return (ns / 1000).toFixed(3) + ' µs';
+  if (ns < 1e9) return (ns / 1e6).toFixed(3) + ' ms';
+  return (ns / 1e9).toFixed(3) + ' s';
+}
+function updateTimeReadout() {
+  document.getElementById('t-sim').textContent = formatSimTime(machine.tick_);
+  const hz = DILATION_HZ[simState.mode];
+  document.getElementById('t-dilation').textContent = simState.mode === 'cycle' ? 'manual' : `1 : ${Math.round(REAL_HW_HZ / hz).toLocaleString()}`;
+}
+
+function advanceSim(dtSeconds) {
+  if (!simState.playing || simState.mode === 'cycle') return;
+  const hz = DILATION_HZ[simState.mode];
+  const wanted = hz * dtSeconds + simState.carry;
+  let ticks = Math.min(Math.floor(wanted), MAX_TICKS_PER_FRAME);
+  simState.carry = Math.min(wanted - ticks, MAX_TICKS_PER_FRAME); // don't let carry explode when the tab was backgrounded
+  if (ticks <= 0) return;
+  for (let i = 0; i < ticks; i++) machine.step();
+}
+
+function stepCycle(n = 1) { for (let i = 0; i < n; i++) machine.step(); refreshScrubberRange(); }
+function stepInstruction() {
+  const before = machine.cores.map((c) => c.stats.instrRetired);
+  let guard = 0;
+  while (guard++ < 20000) {
+    machine.step();
+    if (machine.cores.some((c, i) => c.stats.instrRetired > before[i])) break;
+  }
+  refreshScrubberRange();
+}
+function stepToNextEvent() {
+  let fired = false;
+  const off = machine.bus.on('*', (env) => { if (env.type !== 'INSTR_FETCH') fired = true; });
+  let guard = 0;
+  while (guard++ < 20000 && !fired) machine.step();
+  off();
+  refreshScrubberRange();
+}
+
+// ---------------------------------------------------------------------------
+// Scrubber (rewind)
+// ---------------------------------------------------------------------------
+let scrubbing = false;
+function refreshScrubberRange() {
+  if (!machine.history.length) return;
+  const lo = machine.history[0].tick, hi = machine.history[machine.history.length - 1].tick;
+  const el = document.getElementById('scrubber');
+  el.min = lo; el.max = hi;
+  if (!scrubbing) el.value = hi;
+  document.getElementById('scrub-min').textContent = lo.toLocaleString();
+  document.getElementById('scrub-max').textContent = hi.toLocaleString();
+}
+document.getElementById('scrubber').addEventListener('pointerdown', () => { scrubbing = true; simState.playing = false; updateTransportUI(); });
+document.getElementById('scrubber').addEventListener('input', (e) => {
+  const tick = parseInt(e.target.value, 10);
+  const snap = machine.findSnapshot(tick);
+  if (snap) { R.renderSnapshot(snap); renderCountersFromObject(snap.counters); document.getElementById('t-sim').textContent = formatSimTime(snap.tick) + ' (historical)'; }
+});
+document.getElementById('scrubber').addEventListener('pointerup', () => {
+  scrubbing = false;
+  R.syncAll(machine); // snap the live scene back to the present
+  refreshScrubberRange();
+});
+
+// ---------------------------------------------------------------------------
+// Counters
+// ---------------------------------------------------------------------------
+function renderCountersFromObject(c) {
+  const ipc = c.cycles > 0 ? (c.instrRetired / c.cycles) : 0;
+  const rows = [
+    ['cycles', c.cycles.toLocaleString()],
+    ['instructions', c.instrRetired.toLocaleString()],
+    ['IPC', ipc.toFixed(3)],
+    ['L1 hit', (c.l1dHitRate * 100).toFixed(1) + '%'],
+    ['L2 hit', (c.l2HitRate * 100).toFixed(1) + '%'],
+    ['L3 hit', (c.l3HitRate * 100).toFixed(1) + '%'],
+    ['TLB hit', (c.tlbHits + c.tlbMisses > 0 ? c.tlbHits / (c.tlbHits + c.tlbMisses) * 100 : 100).toFixed(1) + '%'],
+    ['page faults', c.pageFaults.toLocaleString()],
+    ['syscalls', c.syscalls.toLocaleString()],
+    ['ctx switches', c.contextSwitches.toLocaleString()],
+    ['interrupts', c.interrupts.toLocaleString()],
+  ];
+  document.getElementById('counters').innerHTML = rows.map(([k, v]) => `<div class="c-item"><span>${k}</span><b>${v}</b></div>`).join('');
+}
+function renderCounters() {
+  const snap = machine.latestSnapshot();
+  if (snap) renderCountersFromObject(snap.counters);
+}
+
+// ---------------------------------------------------------------------------
+// Inspector
+// ---------------------------------------------------------------------------
+function clearInspector() {
+  document.querySelector('#inspector .body').innerHTML = '<span class="empty">click a core, a RAM frame, a socket, a run-queue slot…</span>';
+}
+function fieldsHtml(pairs) {
+  return pairs.map(([k, v]) => `<div class="field"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+}
+function fmtHex(n) { return '0x' + (n >>> 0).toString(16); }
+function inspect(desc) {
+  if (!desc) return;
+  const body = document.querySelector('#inspector .body');
+  if (desc.kind === 'core') {
+    const c = machine.cores[desc.coreId];
+    body.innerHTML = `<b>Core ${desc.coreId}</b><br/>` + fieldsHtml([
+      ['ring', c.ring === 0 ? 'kernel (0)' : 'user (3)'],
+      ['task', c.task ? `pid ${c.task.pid} (${c.task.proc.name})` : 'idle'],
+      ['RIP', c.rip], ['CR3', 'frame ' + c.cr3],
+      ['RFLAGS', fmtHex(c.rflags)],
+      ['stalled', c.stallCycles > 0 ? c.stallCycles + ' cyc' : 'no'],
+      ['instr retired', c.stats.instrRetired.toLocaleString()],
+      ...REGS.map((r) => [r, fmtHex(c.regs[r])]),
+    ]);
+  } else if (desc.kind === 'ram-frame') {
+    const meta = machine.mem.meta[desc.frame];
+    body.innerHTML = `<b>RAM frame ${desc.frame.toLocaleString()}</b><br/>` + fieldsHtml([
+      ['owner', meta.owner], ['kind', meta.kind], ['dirty', meta.dirty ? 'yes' : 'no'],
+      ['accessed', meta.accessed ? 'yes' : 'no'], ['pinned', meta.pinned ? 'yes' : 'no'],
+      ['physical addr', fmtHex(desc.frame * FRAME_SIZE)],
+    ]);
+  } else if (desc.kind === 'cache') {
+    const cache = desc.which === 'l3' ? machine.l3 : machine.cores[desc.coreId][desc.which];
+    body.innerHTML = `<b>${(desc.which || '').toUpperCase()}${desc.coreId != null ? ' · core ' + desc.coreId : ' (shared)'}</b><br/>` + fieldsHtml([
+      ['sets', cache.sets], ['ways', cache.ways], ['line size', cache.lineSize + ' B'],
+      ['hits', cache.stats.hits.toLocaleString()], ['misses', cache.stats.misses.toLocaleString()],
+      ['hit rate', (cache.hitRate * 100).toFixed(1) + '%'],
+    ]);
+  } else if (desc.kind === 'tlb') {
+    body.innerHTML = `<b>TLB</b><br/>` + fieldsHtml([
+      ['entries', machine.mmu.tlb.size + ' / ' + TLB_SIZE],
+      ['hits', machine.mmu.stats.tlbHits.toLocaleString()], ['misses', machine.mmu.stats.tlbMisses.toLocaleString()],
+      ['page faults', machine.mmu.stats.pageFaults.toLocaleString()], ['table walks', machine.mmu.stats.walks.toLocaleString()],
+    ]);
+  } else if (desc.kind === 'process') {
+    const proc = machine.kernel.processes.get(desc.procId);
+    if (!proc) return;
+    body.innerHTML = `<b>Process — ${proc.name}</b><br/>` + fieldsHtml([
+      ['pid', proc.id], ['CR3', 'frame ' + proc.cr3], ['threads', proc.threads.length],
+      ['fds', [...proc.fds.entries()].map(([fd, e]) => `${fd}:${e.kind}`).join(', ') || '(none)'],
+    ]);
+  } else if (desc.kind === 'task') {
+    const t = machine.kernel.tasks.get(desc.taskId);
+    if (!t) return;
+    body.innerHTML = `<b>Thread pid ${t.pid}</b><br/>` + fieldsHtml([
+      ['process', t.proc.name], ['state', t.state], ['priority', t.priority],
+      ['timeslice', t.timeslice], ['runtime', t.runtimeTicks.toLocaleString() + ' cyc'],
+      ['blocked on', t.blockedOn ? t.blockedOn.kind : '—'],
+    ]);
+  } else if (desc.kind === 'socket') {
+    const s = machine.kernel.net.sockets.get(desc.socketId);
+    if (!s) return;
+    body.innerHTML = `<b>Socket ${s.id}</b><br/>` + fieldsHtml([
+      ['state', s.state], ['local', s.local ? `${s.local.ip}:${s.local.port}` : '—'],
+      ['remote', s.remote ? `${s.remote.ip}:${s.remote.port}` : '—'],
+      ['recv buf', s.recvBuf.length + ' pending'], ['backlog', s.backlog.length],
+    ]);
+  } else if (desc.kind === 'nvme') {
+    body.innerHTML = `<b>NVMe SSD</b><br/>` + fieldsHtml([
+      ['queue depth', machine.kernel.block.queue.length],
+      ['files', machine.kernel.block.inodes.size],
+      ['latency', NVME_LATENCY_CYCLES + ' cyc (~100µs scaled)'],
+    ]);
+  } else if (desc.kind === 'nic') {
+    body.innerHTML = `<b>NIC</b><br/>` + fieldsHtml([
+      ['packets in flight', machine.kernel.net.wire.length],
+      ['sockets', machine.kernel.net.sockets.size],
+      ['MTU', MTU + ' B'],
+    ]);
+  } else if (desc.kind === 'irq-line') {
+    body.innerHTML = `<b>IRQ line — ${desc.line}</b><br/>` + fieldsHtml([
+      ['pending', machine.kernel.irq.pending.filter((p) => p.line === desc.line).length],
+      ['total interrupts', machine.kernel.stats.interrupts.toLocaleString()],
+    ]);
+  } else if (desc.kind === 'runqueue-slot') {
+    const t = machine.kernel.runQueues[desc.core][desc.slot];
+    body.innerHTML = `<b>Run queue · core ${desc.core}, slot ${desc.slot}</b><br/>` + (t
+      ? fieldsHtml([['pid', t.pid], ['proc', t.proc.name], ['priority', t.priority]])
+      : '<span class="empty">empty</span>');
+  } else if (desc.kind === 'pagetable-level' || desc.kind === 'syscall-gate' || desc.kind === 'nvme-queue') {
+    body.innerHTML = `<b>${desc.level || desc.kind}</b><br/><span class="empty">structural element — see narration for live activity</span>`;
+  } else {
+    clearInspector();
+  }
+}
+renderer.domElement.addEventListener('click', (e) => {
+  const desc = R.pick(e.clientX, e.clientY);
+  if (desc) inspect(desc);
+});
+
+// ---------------------------------------------------------------------------
+// Narration
+// ---------------------------------------------------------------------------
+const NARRATION_RULES = {
+  SYSCALL_ENTER: (e) => e.trap ? null : `syscall ${e.name}() — pid ${e.pid} crosses the syscall boundary into the kernel`,
+  SYSCALL_EXIT: (e) => `syscall ${e.name}() returns — back to ring 3`,
+  PAGE_FAULT: (e) => `page fault at ${fmtHex(e.va)} — the CPU stops and traps into the kernel`,
+  PAGE_FAULT_RESOLVED: (e) => `page fault resolved — frame ${e.pfn} mapped in, instruction retried`,
+  CONTEXT_SWITCH: (e) => e.idle ? `core ${e.core} goes idle — nothing left to run` : `context switch on core ${e.core}: pid ${e.from ?? '—'} → pid ${e.to}${e.flushedTLB ? ' (TLB flushed — new address space)' : ''}`,
+  TLB_MISS: () => `TLB miss — walking the page tables`,
+  PAGE_FAULT_TRAP: () => null,
+  IRQ_RAISED: (e) => e.line === 'timer' ? null : `interrupt raised on the ${e.line} line`,
+  THREAD_CLONE: (e) => `clone() — pid ${e.parent} spawns pid ${e.child} in ${e.proc}`,
+  PROCESS_CREATED: (e) => `process created: ${e.name} (pid ${e.id})`,
+  SOCKET_STATE: (e) => `socket ${e.sock} → ${e.state}${e.port ? ' :' + e.port : ''}`,
+  SOCKET_RECV: (e) => `data received on socket ${e.sock}`,
+  DMA_WRITE: () => `NVMe completion — DMA write lands in the page cache`,
+  TLB_FLUSH: () => `TLB flushed — every cached translation is now invalid`,
+};
+let narrationCooldown = 0;
+function setNarration(tag, text) {
+  document.getElementById('narration-tag').textContent = tag;
+  document.getElementById('narration-text').innerHTML = annotate(text);
+}
+function wireNarration(m) {
+  return m.bus.on('*', (env) => {
+    if (narrationCooldown > performance.now()) return;
+    const rule = NARRATION_RULES[env.type];
+    if (!rule) return;
+    const text = rule(env.payload);
+    if (!text) return;
+    setNarration(env.type.replace(/_/g, ' '), text);
+    narrationCooldown = performance.now() + 140;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Legend + layer toggles
+// ---------------------------------------------------------------------------
+document.getElementById('legend').innerHTML = [
+  [R.COLOR.user, 'amber — user mode'],
+  [R.COLOR.kernel, 'cyan — kernel mode'],
+  [R.COLOR.irq, 'red — hardware interrupt'],
+  [R.COLOR.data, 'green — data in motion'],
+].map(([c, t]) => `<div class="row"><span class="swatch" style="background:#${c.toString(16).padStart(6, '0')}"></span>${t}</div>`).join('');
+
+const LAYER_DEFS = [
+  ['hardware', 'Hardware'], ['kernel', 'Kernel'], ['syscall', 'Syscall plane'],
+  ['userspace', 'User space'], ['particles', 'Data tokens'], ['labels', 'Labels'],
+];
+document.getElementById('layer-list').innerHTML = LAYER_DEFS.map(([k, t]) =>
+  `<label><input type="checkbox" checked data-layer="${k}"/>${t}</label>`).join('');
+document.querySelectorAll('[data-layer]').forEach((input) => {
+  input.addEventListener('change', () => {
+    const grp = R.layerGroups[input.dataset.layer];
+    grp.visible = input.checked;
+    // CSS2DRenderer only consults each CSS2DObject's *own* .visible flag
+    // every frame — it does not walk up to check an ancestor group's
+    // visibility the way the WebGL renderer does. Setting group.visible
+    // alone leaves labels showing (and re-stamps any manual style.display
+    // override right back on the next animation frame), so every label
+    // needs its own .visible flipped directly too.
+    grp.traverse((obj) => { if (obj.isCSS2DObject) obj.visible = input.checked; });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Transport / scenario / dilation controls
+// ---------------------------------------------------------------------------
+function updateTransportUI() {
+  document.getElementById('btn-play').textContent = simState.playing ? '⏸' : '▶';
+  document.getElementById('btn-play').disabled = simState.mode === 'cycle';
+  document.querySelectorAll('[data-dilation]').forEach((b) => b.classList.toggle('active', b.dataset.dilation === simState.mode));
+}
+const SNAPSHOT_STRIDE = { cycle: 1, '1000': 1, '1000000': 16, real: 64 };
+document.getElementById('dilation-dial').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-dilation]');
+  if (!btn) return;
+  simState.mode = btn.dataset.dilation;
+  if (simState.mode === 'cycle') simState.playing = false;
+  if (machine) machine.snapshotStride = SNAPSHOT_STRIDE[simState.mode];
+  updateTransportUI();
+});
+document.getElementById('btn-play').addEventListener('click', () => { simState.playing = !simState.playing; updateTransportUI(); });
+document.getElementById('btn-step-cycle').addEventListener('click', () => { simState.playing = false; updateTransportUI(); stepCycle(1); });
+document.getElementById('btn-step-instr').addEventListener('click', () => { simState.playing = false; updateTransportUI(); stepInstruction(); });
+document.getElementById('btn-step-event').addEventListener('click', () => { simState.playing = false; updateTransportUI(); stepToNextEvent(); });
+document.getElementById('btn-reset').addEventListener('click', () => loadScenario(currentKey));
+
+const sel = document.getElementById('scenario-select');
+sel.innerHTML = SCENARIO_ORDER.map((k) => `<option value="${k}">${SCENARIOS[k].title}</option>`).join('');
+sel.value = currentKey;
+sel.addEventListener('change', () => loadScenario(sel.value));
+
+document.getElementById('btn-camera-mode').addEventListener('click', () => R.setCameraMode(R.cameraMode === 'orbit' ? 'freefly' : 'orbit'));
+document.getElementById('btn-follow').addEventListener('click', (e) => {
+  const on = e.target.classList.toggle('active');
+  R.setFollowTarget(on ? (R.latestActiveToken() || 'auto') : null);
+});
+document.getElementById('cutaway-slider').addEventListener('input', (e) => R.setExplode(e.target.value / 100));
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts
+// ---------------------------------------------------------------------------
+// Freefly vertical movement rides the camera's own pitch (look up + W = rise)
+// rather than dedicated keys, so WASD stays free of collisions with the
+// step/inspect shortcuts below.
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case ' ': e.preventDefault(); if (simState.mode !== 'cycle') { simState.playing = !simState.playing; updateTransportUI(); } break;
+    case '.': stepCycle(1); break;
+    case 'i': stepInstruction(); break;
+    case 'e': stepToNextEvent(); break;
+    case 'r': loadScenario(currentKey); break;
+    case 'c': R.setCameraMode(R.cameraMode === 'orbit' ? 'freefly' : 'orbit'); break;
+    case 'f': document.getElementById('btn-follow').click(); break;
+    case 'w': R.fly.fwd = 1; break;
+    case 's': R.fly.back = 1; break;
+    case 'a': R.fly.left = 1; break;
+    case 'd': R.fly.right = 1; break;
+    case 'Shift': R.fly.boost = true; break;
+  }
+});
+window.addEventListener('keyup', (e) => {
+  switch (e.key) {
+    case 'w': R.fly.fwd = 0; break;
+    case 's': R.fly.back = 0; break;
+    case 'a': R.fly.left = 0; break;
+    case 'd': R.fly.right = 0; break;
+    case 'Shift': R.fly.boost = false; break;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Boot overlay
+// ---------------------------------------------------------------------------
+document.getElementById('enter-btn').addEventListener('click', () => {
+  document.getElementById('boot-overlay').hidden = true;
+  document.getElementById('ui').hidden = false;
+  document.getElementById('click-hint').hidden = false;
+  loadScenario(currentKey);
+  mainLoop.started = true;
+});
+
+// ---------------------------------------------------------------------------
+// Main loop — fixed sim timestep advance, render every frame.
+// ---------------------------------------------------------------------------
+const mainLoop = { started: false, lastT: performance.now(), frame: 0 };
+function tick(nowMs) {
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.05, (nowMs - mainLoop.lastT) / 1000);
+  mainLoop.lastT = nowMs;
+  if (!mainLoop.started || !machine) { renderFrame(nowMs); return; }
+
+  advanceSim(dt);
+  if (!scrubbing) {
+    if (mainLoop.frame % 2 === 0) R.syncAll(machine);
+    refreshScrubberRange();
+    updateTimeReadout();
+    if (mainLoop.frame % 6 === 0) renderCounters();
+  }
+  R.updateFreefly(dt);
+  R.orbit.update();
+  R.updateTokens(nowMs);
+  R.updateFlashers(nowMs);
+  if (R.followTarget) {
+    const tok = R.followTarget === 'auto' ? R.latestActiveToken() : R.followTarget;
+    if (tok && tok.mesh) R.orbit.target.lerp(tok.mesh.position, 0.15);
+  }
+  renderFrame(nowMs);
+  mainLoop.frame++;
+}
+function renderFrame() {
+  R.composer.render();
+  R.labelRenderer.render(R.scene, R.camera);
+}
+requestAnimationFrame(tick);
+
+</script>
+
+</body>
+</html>
